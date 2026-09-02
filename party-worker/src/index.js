@@ -48,7 +48,7 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/" || url.pathname === "") {
-      return new Response("Realmscry party relay — see github.com/iliasdecraene/Realmscry\n");
+      return new Response("Realmscry party relay v2 — see github.com/iliasdecraene/Realmscry\n");
     }
     if (url.pathname === "/party" && req.method === "POST") {
       return json({ code: genCode() });
@@ -102,6 +102,17 @@ export class Party {
     if (ev == null || typeof ev !== "object") return;
     if (ev.t === "ping") {
       try { ws.send('{"t":"pong"}'); } catch {}
+      // Piggyback a liveness sweep on the 30s pings: nudge every socket so
+      // dead peers (crash, network drop) are noticed within a ping cycle.
+      let lost = false;
+      for (const sock of this.ctx.getWebSockets()) {
+        if (sock === ws) continue;
+        try { sock.send('{"t":"pong"}'); } catch {
+          lost = true;
+          try { sock.close(1011, "gone"); } catch {}
+        }
+      }
+      if (lost) this.broadcastMembers();
       return;
     }
     if (!ALLOWED_TYPES.has(ev.t)) return;
@@ -114,9 +125,18 @@ export class Party {
 
     await this.appendHistory(ev);
     // Echo to the sender too: every UI renders party events the same way.
+    // A send that throws means the peer died without a close handshake —
+    // shut its socket so it drops out of the member list right away.
+    let lostSomeone = false;
     for (const sock of this.ctx.getWebSockets()) {
-      try { sock.send(out); } catch {}
+      try {
+        sock.send(out);
+      } catch {
+        lostSomeone = true;
+        try { sock.close(1011, "gone"); } catch {}
+      }
     }
+    if (lostSomeone) this.broadcastMembers();
   }
 
   webSocketClose() {

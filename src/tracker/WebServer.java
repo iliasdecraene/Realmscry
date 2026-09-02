@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
  * Serves the UI (web/index.html) on localhost and pushes loot / boss-kill
  * events to it over Server-Sent Events. Bound to 127.0.0.1 only.
  */
-public class WebServer implements GameState.Publisher {
+public class WebServer implements GameState.Publisher, PartyClient.Listener {
 
     public static final int PORT = Integer.getInteger("tracker.port", 8420);
     public static final String URL = "http://localhost:" + PORT;
@@ -47,6 +47,14 @@ public class WebServer implements GameState.Publisher {
     private JsonObject lastBoss = null;
     private String mapName = "";
 
+    // Party: relay frames the jar received, replayed to fresh pages via the
+    // snapshot. Deduped (reconnects replay relay history), capped.
+    private static final int PARTY_CAP = 200;
+    private final ArrayDeque<JsonObject> partyEvents = new ArrayDeque<>();
+    private final java.util.LinkedHashSet<String> partySeen = new java.util.LinkedHashSet<>();
+    private JsonArray partyMembers = new JsonArray();
+    private volatile PartyClient party;
+
     public WebServer() throws IOException {
         String dir = System.getProperty("tracker.web", "web");
         webDir = Paths.get(dir);
@@ -58,6 +66,8 @@ public class WebServer implements GameState.Publisher {
         server.createContext("/debug", this::serveDebug);
         server.createContext("/icon/", this::serveIcon);
         server.createContext("/favicon.png", this::serveFavicon);
+        server.createContext("/party/join", this::servePartyJoin);
+        server.createContext("/party/leave", this::servePartyLeave);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
 
@@ -130,7 +140,16 @@ public class WebServer implements GameState.Publisher {
 
     private void serveDebug(HttpExchange ex) throws IOException {
         GameState s = state;
-        byte[] body = (s == null ? "{}" : GSON.toJson(s.debug())).getBytes(StandardCharsets.UTF_8);
+        java.util.Map<String, Object> d = s == null ? new java.util.LinkedHashMap<>() : s.debug();
+        PartyClient p = party;
+        d.put("partyJoined", p != null && p.joined());
+        d.put("partyConnected", p != null && p.connected());
+        d.put("partyCode", p == null ? "" : p.code());
+        synchronized (partyEvents) {
+            d.put("partyMembers", partyMembers.size());
+            d.put("partyEvents", partyEvents.size());
+        }
+        byte[] body = GSON.toJson(d).getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().set("Content-Type", "application/json");
         ex.sendResponseHeaders(200, body.length);
         try (OutputStream os = ex.getResponseBody()) { os.write(body); }
@@ -192,6 +211,7 @@ public class WebServer implements GameState.Publisher {
         snap.add("loot", loot);
         if (lastBoss != null) snap.add("boss", lastBoss);
         snap.add("bossLog", bossLogJson());
+        snap.add("party", partyStateJson());
         sendTo(os, "snapshot", snap.toString());
     }
 
@@ -252,6 +272,12 @@ public class WebServer implements GameState.Publisher {
         }
         appendHistory(LOOT_HISTORY, o);
         broadcast("loot", o.toString());
+        PartyClient p = party;
+        if (p != null && p.joined()) {
+            JsonObject share = o.deepCopy();
+            share.addProperty("t", "loot");
+            p.send(share);
+        }
         System.out.println("[Loot] " + tier + (boosted ? " (boosted)" : "")
                 + (anyShiny ? " SHINY" : "") + " bag: " + GSON.toJson(items));
     }
@@ -357,6 +383,13 @@ public class WebServer implements GameState.Publisher {
         if (replaced) rewriteBossHistory();
         else appendHistory(BOSS_HISTORY, e);
         broadcast("bosslog", bossLogJson().toString());
+        PartyClient p = party;
+        if (p != null && p.joined()) {
+            JsonObject share = e.deepCopy();
+            share.addProperty("t", "boss");
+            share.addProperty("map", mapName);
+            p.send(share);
+        }
     }
 
     private JsonArray bossLogJson() {
@@ -401,6 +434,118 @@ public class WebServer implements GameState.Publisher {
         } catch (Exception e) {
             System.err.println("[Web] Could not rewrite boss history: " + e);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Party
+    // ------------------------------------------------------------------
+
+    public void setParty(PartyClient party) {
+        this.party = party;
+    }
+
+    private JsonObject partyStateJson() {
+        JsonObject o = new JsonObject();
+        PartyClient p = party;
+        o.addProperty("joined", p != null && p.joined());
+        o.addProperty("connected", p != null && p.connected());
+        o.addProperty("code", p == null ? "" : p.code());
+        o.addProperty("name", p == null ? "" : p.name());
+        o.addProperty("id", p == null ? "" : p.installId());
+        synchronized (partyEvents) {
+            o.add("members", partyMembers.deepCopy());
+            JsonArray evs = new JsonArray();
+            for (JsonObject e : partyEvents) evs.add(e);
+            o.add("events", evs);
+        }
+        return o;
+    }
+
+    @Override
+    public void partyFrame(JsonObject frame) {
+        String t = frame.has("t") ? frame.get("t").getAsString() : "";
+        synchronized (partyEvents) {
+            switch (t) {
+                case "members" -> partyMembers =
+                        frame.getAsJsonArray("members") != null
+                                ? frame.getAsJsonArray("members") : new JsonArray();
+                case "history" -> {
+                    JsonArray evs = frame.getAsJsonArray("events");
+                    if (evs != null) for (var el : evs) {
+                        if (el.isJsonObject()) addPartyEvent(el.getAsJsonObject());
+                    }
+                }
+                case "loot", "boss" -> {
+                    if (!addPartyEvent(frame)) return; // duplicate: don't rebroadcast
+                }
+                default -> {
+                    return; // unknown frame: ignore
+                }
+            }
+        }
+        broadcast("party", frame.toString());
+    }
+
+    /** Dedupe + append; returns false for an already-seen event. */
+    private boolean addPartyEvent(JsonObject e) {
+        try {
+            String key = e.get("t").getAsString() + "|"
+                    + e.get("fromId").getAsString() + "|" + e.get("ts").getAsLong();
+            if (!partySeen.add(key)) return false;
+            while (partySeen.size() > PARTY_CAP * 2) {
+                partySeen.remove(partySeen.iterator().next());
+            }
+        } catch (Exception ex) {
+            return false; // malformed relay event
+        }
+        partyEvents.addLast(e);
+        while (partyEvents.size() > PARTY_CAP) partyEvents.removeFirst();
+        return true;
+    }
+
+    @Override
+    public void partyStatus() {
+        JsonObject o = partyStateJson();
+        o.remove("events"); // status pushes stay small; snapshot has the log
+        broadcast("partystatus", o.toString());
+    }
+
+    private void servePartyJoin(HttpExchange ex) throws IOException {
+        JsonObject rsp = new JsonObject();
+        try {
+            if (!"POST".equals(ex.getRequestMethod())) throw new IllegalArgumentException("POST only");
+            PartyClient p = party;
+            if (p == null) throw new IllegalStateException("party client not ready");
+            JsonObject body = com.google.gson.JsonParser
+                    .parseString(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8))
+                    .getAsJsonObject();
+            String code = body.has("code") ? body.get("code").getAsString() : "";
+            String name = body.has("name") ? body.get("name").getAsString() : "";
+            String joinedCode = p.join(code, name);
+            rsp.addProperty("ok", true);
+            rsp.addProperty("code", joinedCode);
+        } catch (Exception e) {
+            rsp.addProperty("ok", false);
+            rsp.addProperty("error", e.getMessage() == null ? e.toString() : e.getMessage());
+        }
+        byte[] body = rsp.toString().getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.sendResponseHeaders(200, body.length);
+        try (OutputStream os = ex.getResponseBody()) { os.write(body); }
+    }
+
+    private void servePartyLeave(HttpExchange ex) throws IOException {
+        PartyClient p = party;
+        if (p != null) p.leave();
+        synchronized (partyEvents) {
+            partyEvents.clear();
+            partySeen.clear();
+            partyMembers = new JsonArray();
+        }
+        byte[] body = "{\"ok\":true}".getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.sendResponseHeaders(200, body.length);
+        try (OutputStream os = ex.getResponseBody()) { os.write(body); }
     }
 
     @Override

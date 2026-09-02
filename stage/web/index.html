@@ -55,9 +55,90 @@
   header h1 img { width: 22px; height: 22px; image-rendering: pixelated; }
   #map { color: var(--text-secondary); font-size: 13px; }
   #conn {
-    margin-left: auto; display: flex; align-items: center; gap: 7px;
+    display: flex; align-items: center; gap: 7px;
     font-size: 12px; color: var(--text-muted);
   }
+
+  /* ---- Party ---- */
+  .party-chip {
+    margin-left: auto; margin-right: 16px;
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12px; font-weight: 600;
+    padding: 4px 11px; border-radius: 999px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text-secondary); cursor: pointer; user-select: none;
+  }
+  .party-chip:hover { border-color: var(--text-muted); }
+  .party-chip.in { color: var(--live); border-color: var(--live); }
+  .party-chip.off { color: var(--text-muted); }
+  .party-pop {
+    position: absolute; top: 54px; right: 0; z-index: 20; width: 270px;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.5);
+  }
+  .party-pop h3 {
+    font-size: 11px; font-weight: 600; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px;
+  }
+  .party-pop input {
+    width: 100%; margin-bottom: 8px; padding: 7px 10px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text-primary); font: inherit; font-size: 13px;
+  }
+  .party-pop input:focus { outline: 1px solid var(--bar); }
+  .party-btns { display: flex; gap: 8px; margin-top: 2px; }
+  .party-btns button {
+    flex: 1; padding: 7px 0; border: none; border-radius: 6px;
+    font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer;
+    background: var(--bar); color: #fff;
+  }
+  .party-btns button.ghost {
+    background: var(--surface-2); color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+  .party-btns button.danger { background: #a33; }
+  .party-code-row {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  }
+  .party-code {
+    font-size: 20px; font-weight: 700; letter-spacing: .18em;
+    color: var(--text-primary); cursor: pointer;
+  }
+  .party-code-row .hint { font-size: 11px; color: var(--text-muted); }
+  .party-member {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; padding: 3px 0; color: var(--text-secondary);
+  }
+  .party-member .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); }
+  .party-member.you-row { color: var(--text-primary); font-weight: 600; }
+  .party-err { color: #e66767; font-size: 12px; margin-top: 6px; }
+  .from-chip {
+    display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .05em;
+    color: var(--surface-0); background: var(--live);
+    border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px;
+  }
+  .pb-card {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; margin-top: 7px;
+  }
+  .pb-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .pb-head img { width: 28px; height: 28px; image-rendering: pixelated; flex: none; }
+  .pb-name { font-weight: 600; font-size: 13px; flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pb-line { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .pb-who { flex: none; width: 92px; font-size: 12px; color: var(--text-secondary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pb-line.me .pb-who { color: var(--you); font-weight: 650; }
+  .pb-line .track { flex: 1; margin: 0; }
+  .pb-line .fill { background: var(--bar); }
+  .pb-line.me .fill { background: var(--you); }
+  .pb-nums { flex: none; font-size: 12px; color: var(--text-secondary);
+    font-variant-numeric: tabular-nums; }
+  .pb-nums .pct { color: var(--text-muted); font-size: 11px; margin-left: 5px; }
+  .pb-rank { flex: none; width: 30px; text-align: right; font-size: 11px;
+    font-weight: 700; color: var(--text-muted); }
+  .pb-line.me .pb-rank { color: var(--you); }
   #conn .dot {
     width: 8px; height: 8px; border-radius: 50%;
     background: var(--text-muted);
@@ -324,10 +405,12 @@
 </head>
 <body>
 <div class="wrap">
-  <header>
+  <header style="position:relative">
     <h1><img src="/favicon.png" alt="" onerror="this.remove()">Realmscry</h1>
     <span id="map"></span>
+    <span class="party-chip off" id="partyChip" onclick="togglePartyPop()">Party</span>
     <span id="conn"><span class="dot"></span><span id="connText">connecting…</span></span>
+    <div class="party-pop" id="partyPop" hidden></div>
   </header>
 
   <div class="grid">
@@ -350,6 +433,10 @@ let lootLog = [];
 let boss = null;
 let bossLog = [];          // your own line for the 5 most recent kills
 let bossLogOpen = false;   // dropdown state survives re-renders
+let party = { joined: false, connected: false, code: "", name: "", id: "", members: [], events: [] };
+let partyPopOpen = false;
+let partyBossOpen = true;  // party boss section expanded by default
+const partySeen = new Set();
 
 const fmt = n => {
   if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
@@ -401,13 +488,22 @@ const lootRow = l => `
              onerror="this.remove()">${
             n ? `<span class="ench e${n}">${"<i></i>".repeat(n)}</span>` : ""
           }</span>${esc(i.name)}</span>`; }).join("")}</div>
-        <div class="loot-meta">${esc(l.map || "")} · ${ago(l.ts)}</div>
+        <div class="loot-meta">${l.from && l.fromId !== party.id
+          ? `<span class="from-chip">${esc(l.from)}</span> · ` : ""}${esc(l.map || "")} · ${ago(l.ts)}</div>
       </div>
     </div>`;
 
+// Own loot plus party members' drops (theirs carry `from`), newest first.
+function combinedLoot() {
+  const remote = party.events.filter(e => e.t === "loot" && e.fromId !== party.id);
+  if (!remote.length) return lootLog;
+  return lootLog.concat(remote).slice().sort((a, b) => b.ts - a.ts).slice(0, 2000);
+}
+
 function renderLoot() {
   const el = $("loot");
-  if (!lootLog.length) {
+  const list = combinedLoot();
+  if (!list.length) {
     el.innerHTML = '<div class="empty">No white / orange / red bags yet.</div>';
     return;
   }
@@ -415,7 +511,7 @@ function renderLoot() {
   // needs none (the panel header covers it), but if the newest loot is
   // older, label it so the age is obvious.
   let html = "", prevKey = null;
-  for (const l of lootLog) {
+  for (const l of list) {
     const k = dayKey(l.ts);
     if (k !== prevKey && (prevKey !== null || dayLabel(l.ts) !== "Today")) {
       html += `<div class="day-sep">${dayLabel(l.ts)}</div>`;
@@ -471,10 +567,58 @@ function toggleBossLog() {
   renderBoss();
 }
 
+// Party members' boss lines, grouped into one card per boss fight
+// (same boss name within 3 minutes = same fight, one line per member).
+function partyBossGroups() {
+  const evs = party.events.filter(e => e.t === "boss").slice().sort((a, b) => b.ts - a.ts);
+  const groups = [];
+  for (const e of evs) {
+    let g = groups.find(g => g.name === e.name && Math.abs(g.ts - e.ts) < 180000);
+    if (g && g.lines.some(l => l.fromId === e.fromId)) g = null; // one line each
+    if (!g) { g = { name: e.name, icon: e.icon, ts: e.ts, lines: [] }; groups.push(g); }
+    g.lines.push(e);
+  }
+  return groups.slice(0, 5);
+}
+
+function partyBossHtml() {
+  if (!party.joined) return "";
+  const groups = partyBossGroups();
+  if (!groups.length) return "";
+  const cards = groups.map(g => `
+    <div class="pb-card">
+      <div class="pb-head">
+        ${g.icon > 0 ? `<img src="/icon/${g.icon}" alt="" onerror="this.remove()">` : ""}
+        <span class="pb-name">${esc(g.name)}</span>
+        <span class="bl-ago">${ago(g.ts)}</span>
+      </div>
+      ${g.lines.slice().sort((a, b) => (b.myDmg || 0) - (a.myDmg || 0)).map(l => {
+        const pct = l.total > 0 ? Math.round(100 * (l.myDmg || 0) / l.total) : 0;
+        const me = l.fromId === party.id;
+        return `
+      <div class="pb-line${me ? " me" : ""}">
+        <span class="pb-who">${esc(me ? "You" : l.from || "?")}</span>
+        <span class="pb-rank">${l.myRank ? "#" + l.myRank : "—"}</span>
+        <div class="track"><div class="fill" style="width:${Math.max(2, pct)}%"></div></div>
+        <span class="pb-nums">${fmt(l.myDmg || 0)}<span class="pct">${pct}%</span></span>
+      </div>`; }).join("")}
+    </div>`).join("");
+  return `
+    <div class="bl-toggle${partyBossOpen ? " open" : ""}" onclick="togglePartyBoss()">
+      Party Bosses <span class="bl-count">${groups.length}</span><span class="chev">▾</span>
+    </div>
+    <div${partyBossOpen ? "" : " hidden"}>${cards}</div>`;
+}
+function togglePartyBoss() {
+  partyBossOpen = !partyBossOpen;
+  renderBoss();
+}
+
 function renderBoss() {
   const el = $("boss");
   if (!boss) {
-    el.innerHTML = '<div class="empty">No boss kills recorded yet.</div>' + bossLogHtml();
+    el.innerHTML = '<div class="empty">No boss kills recorded yet.</div>'
+      + partyBossHtml() + bossLogHtml();
     return;
   }
   // rank/loadout arrived with newer builds; default them for old snapshots.
@@ -521,11 +665,108 @@ function renderBoss() {
     </div>` +
     main.map(card).join("") +
     (mine.length ? '<div class="me-sep"></div>' + mine.map(card).join("") : "") +
-    bossLogHtml();
+    partyBossHtml() + bossLogHtml();
 }
 
 function setMap(name) {
   $("map").textContent = name || "";
+}
+
+// ---- Party UI ----
+function renderParty() {
+  const chip = $("partyChip");
+  if (party.joined) {
+    chip.className = "party-chip " + (party.connected ? "in" : "off");
+    chip.textContent = `⬡ ${party.code} · ${party.members.length || "…"}`;
+  } else {
+    chip.className = "party-chip off";
+    chip.textContent = "Party";
+  }
+  const pop = $("partyPop");
+  pop.hidden = !partyPopOpen;
+  if (!partyPopOpen) return;
+  if (!party.joined) {
+    pop.innerHTML = `
+      <h3>Join a party</h3>
+      <input id="pName" maxlength="24" placeholder="Your name"
+        value="${esc(localStorage.getItem("partyName") || party.name || "")}">
+      <input id="pCode" maxlength="12" placeholder="Party code (empty = new party)"
+        style="text-transform:uppercase">
+      <div class="party-btns">
+        <button onclick="partyJoin(false)">Join</button>
+        <button class="ghost" onclick="partyJoin(true)">Create new</button>
+      </div>
+      <div class="party-err" id="partyErr"></div>`;
+  } else {
+    const rows = party.members.map(m => `
+      <div class="party-member${m.id === party.id ? " you-row" : ""}">
+        <span class="dot"></span>${esc(m.name)}${m.id === party.id ? " (you)" : ""}
+      </div>`).join("");
+    pop.innerHTML = `
+      <h3>Party</h3>
+      <div class="party-code-row">
+        <span class="party-code" title="Click to copy"
+          onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(party.code)}')">${esc(party.code)}</span>
+        <span class="hint">share this code${party.connected ? "" : " · reconnecting…"}</span>
+      </div>
+      ${rows || '<div class="party-member">connecting…</div>'}
+      <div class="party-btns" style="margin-top:10px">
+        <button class="danger" onclick="partyLeave()">Leave party</button>
+      </div>`;
+  }
+}
+function togglePartyPop() {
+  partyPopOpen = !partyPopOpen;
+  renderParty();
+}
+async function partyJoin(createNew) {
+  const name = $("pName").value.trim();
+  const code = createNew ? "" : $("pCode").value.trim();
+  if (!name) { $("partyErr").textContent = "Enter a name first."; return; }
+  if (!createNew && !code) { $("partyErr").textContent = "Enter a code, or Create new."; return; }
+  try { localStorage.setItem("partyName", name); } catch (e) {}
+  $("partyErr").textContent = "Connecting…";
+  try {
+    const r = await fetch("/party/join", { method: "POST",
+      body: JSON.stringify({ name, code }) }).then(r => r.json());
+    if (!r.ok) { $("partyErr").textContent = r.error || "Failed."; return; }
+    party.joined = true;
+    party.code = r.code;
+    party.name = name;
+    renderParty();
+  } catch (e) {
+    $("partyErr").textContent = "Tracker unreachable.";
+  }
+}
+async function partyLeave() {
+  try { await fetch("/party/leave", { method: "POST" }); } catch (e) {}
+  party = { ...party, joined: false, connected: false, code: "", members: [], events: [] };
+  partySeen.clear();
+  partyPopOpen = false;
+  renderParty(); renderLoot(); renderBoss();
+}
+
+function addPartyEvent(e) {
+  const k = e.t + "|" + e.fromId + "|" + e.ts;
+  if (partySeen.has(k)) return false;
+  partySeen.add(k);
+  party.events.push(e);
+  if (party.events.length > 300) party.events.shift();
+  return true;
+}
+function applyPartyFrame(f) {
+  if (f.t === "members") {
+    party.members = f.members || [];
+    renderParty();
+  } else if (f.t === "history") {
+    let any = false;
+    for (const e of f.events || []) any = addPartyEvent(e) || any;
+    if (any) { renderLoot(); renderBoss(); }
+  } else if (f.t === "loot" || f.t === "boss") {
+    if (addPartyEvent(f)) {
+      if (f.t === "loot") renderLoot(); else renderBoss();
+    }
+  }
 }
 
 function connect() {
@@ -543,12 +784,25 @@ function connect() {
     lootLog = d.loot || [];
     boss = d.boss || null;
     bossLog = d.bossLog || [];
+    if (d.party) {
+      party = { ...d.party, events: [] };
+      partySeen.clear();
+      for (const ev of d.party.events || []) addPartyEvent(ev);
+    }
     setMap(d.map);
-    renderLoot(); renderBoss();
+    renderLoot(); renderBoss(); renderParty();
   });
   es.addEventListener("bosslog", e => {
     bossLog = JSON.parse(e.data);
     renderBoss();
+  });
+  es.addEventListener("party", e => applyPartyFrame(JSON.parse(e.data)));
+  es.addEventListener("partystatus", e => {
+    const d = JSON.parse(e.data);
+    party.joined = d.joined; party.connected = d.connected;
+    party.code = d.code; party.name = d.name; party.id = d.id;
+    party.members = d.members || party.members;
+    renderParty();
   });
   es.addEventListener("loot", e => {
     const d = JSON.parse(e.data);

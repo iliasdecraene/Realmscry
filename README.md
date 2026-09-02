@@ -22,6 +22,10 @@
 - **Last Boss Killed** — damage leaderboard for the boss you just killed:
   top-5 players with avatars and their equipped loadouts, plus your own rank
   highlighted even when you're not in the top 5.
+- **Parties** — click **Party** in the top bar, create a party and share the
+  6-letter code with friends (they need Realmscry too). You'll see each
+  other's drops live in the loot feed, and a per-boss damage comparison of
+  everyone's runs. The party survives restarts until you leave it.
 - **Self-updating** — checks this repo's releases at launch and updates
   itself. Install once, get every new feature automatically.
 

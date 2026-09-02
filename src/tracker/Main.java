@@ -66,6 +66,10 @@ public class Main {
         web.setState(state);
         Sounds.init(); // preload clips off the capture thread
 
+        PartyClient party = new PartyClient(web);
+        web.setParty(party);
+        party.autoRejoin(); // reconnect to a saved party silently
+
         Register r = Register.INSTANCE;
         r.register(PacketType.MAPINFO, safe(state, p -> state.mapInfo((MapInfoPacket) p)));
         r.register(PacketType.CREATE_SUCCESS, safe(state, p -> state.createSuccess((CreateSuccessPacket) p)));
