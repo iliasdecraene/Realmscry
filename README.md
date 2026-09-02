@@ -33,14 +33,24 @@ only to `localhost`.
 
 ## Install (once)
 
-1. Install **[Npcap](https://npcap.com/#download)** (the packet-capture
-   driver; default settings are fine).
-2. Install **Java 25+**, e.g. [Adoptium Temurin](https://adoptium.net/).
+1. Install the packet-capture driver *(Windows only — default settings are
+   fine)*:
+   - **Npcap for Windows:** <https://npcap.com/>
+2. Install **Java 25**:
+   - **Java for Windows:** [jdk-25_windows-x64_bin.msi](https://download.oracle.com/java/25/latest/jdk-25_windows-x64_bin.msi)
+   - **Java for Mac (Apple Silicon):** [jdk-25_macos-aarch64_bin.dmg](https://download.oracle.com/java/25/latest/jdk-25_macos-aarch64_bin.dmg)
+   - **Java for Mac (Intel):** [jdk-25_macos-x64_bin.dmg](https://download.oracle.com/java/25/latest/jdk-25_macos-x64_bin.dmg)
+   - Other platforms / all versions: [Oracle JDK 25 downloads](https://www.oracle.com/java/technologies/javase/jdk25-archive-downloads.html)
 3. Download **`Realmscry.jar`** from the
    [latest release](../../releases/latest) and put it in its own folder
    (it creates an `assets/` folder and a loot-history file next to itself).
 4. Double-click `Realmscry.jar`. A small launcher window appears; hit
    **Open Tracker UI** (or browse to <http://localhost:8420>).
+
+> **Mac note:** macOS ships its own capture library (no Npcap needed), but
+> reading network traffic requires extra permissions — run
+> `sudo java -jar Realmscry.jar` from Terminal. Windows is the
+> primary/tested platform.
 
 Play. Bags and boss kills show up as they happen.
 
