@@ -1,0 +1,2 @@
+Main-Class: tracker.Main
+Enable-Native-Access: ALL-UNNAMED
