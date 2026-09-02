@@ -19,3 +19,5 @@ MEMORY.md
 docs/
 References/
 memory/
+node_modules/
+party-worker/.wrangler/

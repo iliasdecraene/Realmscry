@@ -1,0 +1,12 @@
+// Realmscry party relay — Cloudflare Worker + one Durable Object per party.
+// Deployed automatically by Cloudflare Workers Builds on push to main.
+{
+  "name": "realmscry-party",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-01",
+  "durable_objects": {
+    "bindings": [{ "name": "PARTY", "class_name": "Party" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Party"] }],
+  "observability": { "enabled": true }
+}
