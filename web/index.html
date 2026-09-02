@@ -650,6 +650,21 @@ function toggleBossLog() {
   renderBoss();
 }
 
+// A party member's own tracker saw their whole fight; ours may have joined
+// late and missed damage (wrong rank/amount for them). Their self-reported
+// boss line for this fight is authoritative — find it by boss name + time.
+function authLineFor(name, bossName, ts) {
+  const m = memberByName(name);
+  if (!m) return null;
+  let best = null;
+  for (const e of party.events) {
+    if (e.t !== "boss" || e.fromId !== m.id || e.name !== bossName) continue;
+    if (Math.abs(e.ts - ts) < 180000
+        && (!best || Math.abs(e.ts - ts) < Math.abs(best.ts - ts))) best = e;
+  }
+  return best;
+}
+
 function renderBoss() {
   const el = $("boss");
   if (!boss) {
@@ -658,7 +673,19 @@ function renderBoss() {
     return;
   }
   // rank/loadout arrived with newer builds; default them for old snapshots.
-  const rows = boss.top.map((t, i) => ({ ...t, rank: t.rank || i + 1 }));
+  const rows = boss.top.map((t, i) => {
+    const r = { ...t, rank: t.rank || i + 1 };
+    if (party.joined && !r.me) {
+      const auth = authLineFor(r.name, boss.name, boss.ts);
+      if (auth) {
+        r.dmg = auth.myDmg || 0;
+        if (auth.myRank) r.rank = auth.myRank;
+        r.authTotal = auth.total; // their % is against THEIR seen total
+      }
+    }
+    return r;
+  });
+  rows.sort((a, b) => a.rank - b.rank || b.dmg - a.dmg);
   const main = rows.filter(r => r.rank <= 5);
   // Below-top-5 rows: us and/or party members, under a separator.
   const mine = rows.filter(r => r.rank > 5);
@@ -688,7 +715,7 @@ function renderBoss() {
           <span class="pname">${esc(t.name)}${t.me ? '<span class="you-chip">YOU</span>' : ""}${
             c ? `<span class="you-chip" style="background:${c}">PARTY</span>` : ""}</span>
           <span class="dval">${fmt(t.dmg)}<span class="pct">${
-            Math.round(100 * t.dmg / boss.total)}%</span></span>
+            Math.round(100 * t.dmg / Math.max(1, t.authTotal || boss.total))}%</span></span>
         </div>
         <div class="track"><div class="fill" style="width:${
           Math.max(2, 100 * t.dmg / max)}%${c ? `;background:${c}` : ""}"></div></div>
