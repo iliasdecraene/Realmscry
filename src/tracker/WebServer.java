@@ -68,6 +68,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         server.createContext("/favicon.png", this::serveFavicon);
         server.createContext("/party/join", this::servePartyJoin);
         server.createContext("/party/leave", this::servePartyLeave);
+        server.createContext("/guild/", this::serveGuild);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
 
@@ -278,6 +279,8 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
             share.addProperty("t", "loot");
             p.send(share);
         }
+        GuildClient g = guild;
+        if (g != null) g.postEvent("loot", o.deepCopy(), ts);
         System.out.println("[Loot] " + tier + (boosted ? " (boosted)" : "")
                 + (anyShiny ? " SHINY" : "") + " bag: " + GSON.toJson(items));
     }
@@ -564,6 +567,113 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         ex.getResponseHeaders().set("Content-Type", "application/json");
         ex.sendResponseHeaders(200, body.length);
         try (OutputStream os = ex.getResponseBody()) { os.write(body); }
+    }
+
+    // ------------------------------------------------------------------
+    // Guild (account + guild live behind GuildClient; page goes through us
+    // so the auth token never leaves the jar)
+    // ------------------------------------------------------------------
+
+    private volatile GuildClient guild;
+
+    public void setGuild(GuildClient guild) {
+        this.guild = guild;
+    }
+
+    private void serveGuild(HttpExchange ex) throws IOException {
+        GuildClient g = guild;
+        JsonObject rsp;
+        if (g == null) {
+            rsp = new JsonObject();
+            rsp.addProperty("ok", false);
+            rsp.addProperty("error", "guild client not ready");
+        } else {
+            String path = ex.getRequestURI().getPath();
+            JsonObject body = new JsonObject();
+            try {
+                byte[] raw = ex.getRequestBody().readAllBytes();
+                if (raw.length > 0) {
+                    body = com.google.gson.JsonParser
+                            .parseString(new String(raw, StandardCharsets.UTF_8)).getAsJsonObject();
+                }
+            } catch (Exception ignored) {
+            }
+            String q = ex.getRequestURI().getQuery();
+            java.util.Map<String, String> qs = new java.util.HashMap<>();
+            if (q != null) {
+                for (String kv : q.split("&")) {
+                    int i = kv.indexOf('=');
+                    if (i > 0) qs.put(kv.substring(0, i), kv.substring(i + 1));
+                }
+            }
+            rsp = switch (path) {
+                case "/guild/status" -> g.state();
+                case "/guild/create" -> g.create(body.has("name") ? body.get("name").getAsString() : "");
+                case "/guild/join" -> g.join(body.has("code") ? body.get("code").getAsString() : "");
+                case "/guild/leave" -> g.leave();
+                case "/guild/timeline" -> g.timeline(qs.getOrDefault("filter", "all"),
+                        Long.parseLong(qs.getOrDefault("before", "0")));
+                case "/guild/like" -> g.like(
+                        body.has("eventId") ? body.get("eventId").getAsLong() : 0,
+                        body.has("on") && body.get("on").getAsBoolean());
+                default -> {
+                    JsonObject o = new JsonObject();
+                    o.addProperty("ok", false);
+                    o.addProperty("error", "unknown route");
+                    yield o;
+                }
+            };
+        }
+        byte[] out = rsp.toString().getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.sendResponseHeaders(200, out.length);
+        try (OutputStream os = ex.getResponseBody()) { os.write(out); }
+    }
+
+    @Override
+    public void died(GameState.Death d) {
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "death");
+        o.addProperty("ts", d.ts);
+        o.addProperty("map", mapName);
+        o.addProperty("name", d.name);
+        o.addProperty("icon", d.icon);
+        o.addProperty("classType", d.classType);
+        o.addProperty("killedBy", d.killedBy);
+        o.addProperty("fame", d.fame);
+        o.addProperty("maxed", d.maxed);
+        JsonArray equip = new JsonArray();
+        for (int id : d.equip) {
+            JsonObject it = new JsonObject();
+            it.addProperty("id", id);
+            if (id > 0) it.addProperty("name", Names.item(id));
+            equip.add(it);
+        }
+        o.add("equip", equip);
+        JsonArray carried = new JsonArray();
+        for (int id : d.backpack) {
+            JsonObject it = new JsonObject();
+            it.addProperty("id", id);
+            it.addProperty("name", Names.item(id));
+            carried.add(it);
+        }
+        o.add("backpack", carried);
+        synchronized (lootLog) {
+            lootLog.addFirst(o);
+            while (lootLog.size() > LOOT_CAP) lootLog.removeLast();
+        }
+        appendHistory(LOOT_HISTORY, o);
+        broadcast("death", o.toString());
+        PartyClient p = party;
+        if (p != null && p.joined()) {
+            JsonObject share = o.deepCopy();
+            share.addProperty("t", "death");
+            p.send(share);
+        }
+        GuildClient g = guild;
+        if (g != null) g.postEvent("death", o.deepCopy(), d.ts);
+        System.out.println("[Death] " + d.name + " killed by " + d.killedBy
+                + " (fame " + d.fame + ", " + d.maxed + "/8)");
     }
 
     @Override

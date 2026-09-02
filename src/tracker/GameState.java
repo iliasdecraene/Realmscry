@@ -124,7 +124,7 @@ public class GameState {
 
     // Diagnostics, readable at /debug
     private long cPlayerShoot, cServerShoot, cEnemyHit, cEnemyHitMatched,
-            cDamagePkts, cDamageAttributed, cLootBags, cBossKills, cErrors;
+            cDamagePkts, cDamageAttributed, cLootBags, cBossKills, cDeaths, cErrors;
     private String lastError = "";
 
     // Capture-health heartbeats for the sniffer watchdog. Volatile instead of
@@ -142,11 +142,25 @@ public class GameState {
     private String mapName = "";
     private final Publisher publisher;
 
+    /** Snapshot of our character the moment a DeathPacket arrives. */
+    public static class Death {
+        public String name = "";      // IGN ("" if never seen — mid-map ghost)
+        public String killedBy = "";
+        public int icon;              // skin, else class sprite
+        public int classType;         // class objectType (for the ?/8 lookup)
+        public long fame;
+        public int maxed = -1;        // 0..8, -1 = unknown (no players.xml)
+        public int[] equip = new int[4];
+        public int[] backpack = new int[0]; // inventory + backpack items, ids > 0
+        public long ts;
+    }
+
     /** Sink for UI events. */
     public interface Publisher {
         /** items: one int[] per item — {objectId, shinyFlag(0/1), enchantSlots(0-4)}. */
         void lootDropped(String tier, boolean boosted, int bagType, List<int[]> items, long ts);
         void bossKilled(String bossName, int bossType, long totalDmg, long fightMs, List<Object[]> top, long ts);
+        void died(Death death);
         void mapChanged(String mapName);
     }
 
@@ -326,6 +340,66 @@ public class GameState {
         if (attackerId == -1) return; // damage from non-players (enemies, traps)
         cDamageAttributed++;
         addDamage(ent(p.targetId), attackerId, p.damageAmount);
+    }
+
+    /**
+     * Our own death. The DeathPacket is only ever sent to the dying client,
+     * so no ownership check is needed; everything about the character is
+     * snapshotted from the stats we tracked up to this moment.
+     */
+    public synchronized void death(packets.incoming.DeathPacket p) {
+        Death d = new Death();
+        d.ts = System.currentTimeMillis();
+        d.killedBy = p.killedBy == null ? "" : p.killedBy;
+        d.fame = p.totalFame;
+        Ent me = players.get(myId);
+        if (me != null) {
+            String n = me.name();
+            if (n != null) d.name = n;
+            d.classType = me.objectType > 0 ? me.objectType : 0;
+            int skin = me.stat(StatType.SKIN_ID);
+            d.icon = skin > 0 ? skin : d.classType;
+            for (int i = 0; i < 4; i++) {
+                StatData sd = me.stats.get(StatType.INVENTORY_0_STAT.get() + i);
+                if (sd != null && sd.statValue > 0) d.equip[i] = sd.statValue;
+            }
+            // Carried items: main inventory (stats 12..19) then backpack
+            // (131..138) — shown together on the death card.
+            ArrayList<Integer> carried = new ArrayList<>();
+            for (int i = 4; i < 12; i++) {
+                StatData sd = me.stats.get(StatType.INVENTORY_0_STAT.get() + i);
+                if (sd != null && sd.statValue > 0) carried.add(sd.statValue);
+            }
+            for (int i = 0; i < 8; i++) {
+                StatData sd = me.stats.get(StatType.BACKPACK_0_STAT.get() + i);
+                if (sd != null && sd.statValue > 0) carried.add(sd.statValue);
+            }
+            d.backpack = carried.stream().mapToInt(Integer::intValue).toArray();
+            // 8 stats + their equipment-boost components, game order.
+            int[] stat = {
+                    me.stat(StatType.MAX_HP_STAT), me.stat(StatType.MAX_MP_STAT),
+                    me.stat(StatType.ATTACK_STAT), me.stat(StatType.DEFENSE_STAT),
+                    me.stat(StatType.SPEED_STAT), me.stat(StatType.DEXTERITY_STAT),
+                    me.stat(StatType.VITALITY_STAT), me.stat(StatType.WISDOM_STAT)};
+            int[] boost = {
+                    me.stat(StatType.MAX_HP_BOOST_STAT), me.stat(StatType.MAX_MP_BOOST_STAT),
+                    me.stat(StatType.ATTACK_BOOST_STAT), me.stat(StatType.DEFENSE_BOOST_STAT),
+                    me.stat(StatType.SPEED_BOOST_STAT), me.stat(StatType.DEXTERITY_BOOST_STAT),
+                    me.stat(StatType.VITALITY_BOOST_STAT), me.stat(StatType.WISDOM_BOOST_STAT)};
+            if (d.classType > 0 && me.hasStat(StatType.MAX_HP_STAT)) {
+                d.maxed = ClassStats.maxedCount(d.classType, stat, boost);
+            }
+        }
+        cDeaths++;
+        publisher.died(d);
+    }
+
+    /** Own game account id (string stat), "" while unknown. */
+    public synchronized String myAccountId() {
+        Ent me = players.get(myId);
+        if (me == null) return "";
+        StatData sd = me.stats.get(StatType.ACCOUNT_ID_STAT.get());
+        return sd != null && sd.stringStatValue != null ? sd.stringStatValue : "";
     }
 
     // ------------------------------------------------------------------
@@ -724,6 +798,7 @@ public class GameState {
         d.put("damageAttributed", cDamageAttributed);
         d.put("lootBags", cLootBags);
         d.put("bossKills", cBossKills);
+        d.put("deaths", cDeaths);
         d.put("handlerErrors", cErrors);
         d.put("lastError", lastError);
         long now = System.currentTimeMillis();

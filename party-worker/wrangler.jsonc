@@ -5,8 +5,14 @@
   "main": "src/index.js",
   "compatibility_date": "2026-08-01",
   "durable_objects": {
-    "bindings": [{ "name": "PARTY", "class_name": "Party" }]
+    "bindings": [
+      { "name": "PARTY", "class_name": "Party" },
+      { "name": "REGISTRY", "class_name": "Registry" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Party"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Party"] },
+    { "tag": "v2", "new_sqlite_classes": ["Registry"] }
+  ],
   "observability": { "enabled": true }
 }

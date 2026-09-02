@@ -57,6 +57,9 @@ public class Main {
             @Override public void bossKilled(String name, int bossType, long total, long fightMs, List<Object[]> top, long ts) {
                 web.bossKilled(name, bossType, total, fightMs, top, ts);
             }
+            @Override public void died(GameState.Death death) {
+                web.died(death);
+            }
             @Override public void mapChanged(String mapName) {
                 web.mapChanged(mapName);
                 if (launcher != null) launcher.setMap(mapName);
@@ -72,6 +75,10 @@ public class Main {
         web.setParty(party);
         party.autoRejoin(); // reconnect to a saved party silently
 
+        GuildClient guild = new GuildClient();
+        guild.setProfileSource(state::myIcon, state::myIgn, state::myAccountId);
+        web.setGuild(guild);
+
         Register r = Register.INSTANCE;
         r.register(PacketType.MAPINFO, safe(state, p -> state.mapInfo((MapInfoPacket) p)));
         r.register(PacketType.CREATE_SUCCESS, safe(state, p -> state.createSuccess((CreateSuccessPacket) p)));
@@ -81,6 +88,7 @@ public class Main {
         r.register(PacketType.SERVERPLAYERSHOOT, safe(state, p -> state.serverPlayerShoot((ServerPlayerShootPacket) p)));
         r.register(PacketType.ENEMYHIT, safe(state, p -> state.enemyHit((EnemyHitPacket) p)));
         r.register(PacketType.DAMAGE, safe(state, p -> state.damage((DamagePacket) p)));
+        r.register(PacketType.DEATH, safe(state, p -> state.death((packets.incoming.DeathPacket) p)));
 
         // Heartbeat 1: raw reassembled port-2050 bytes, before decryption.
         // The logger subscriber fires on every stream chunk the sniffer emits.

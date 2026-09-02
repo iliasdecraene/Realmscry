@@ -29,7 +29,7 @@ const CODE_LEN = 6;
 const MAX_MEMBERS = 10;
 const MAX_FRAME = 16 * 1024;
 const HISTORY_MAX = 100;
-const ALLOWED_TYPES = new Set(["loot", "boss"]);
+const ALLOWED_TYPES = new Set(["loot", "boss", "death"]);
 
 function genCode() {
   const buf = new Uint8Array(CODE_LEN);
@@ -50,7 +50,7 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/" || url.pathname === "") {
-      return new Response("Realmscry party relay v3 — see github.com/iliasdecraene/Realmscry\n");
+      return new Response("Realmscry relay v4 — see github.com/iliasdecraene/Realmscry\n");
     }
     if (url.pathname === "/party" && req.method === "POST") {
       return json({ code: genCode() });
@@ -60,6 +60,10 @@ export default {
       const code = m[1].toUpperCase();
       const id = env.PARTY.idFromName(code);
       return env.PARTY.get(id).fetch(req);
+    }
+    // Accounts + guilds live in one SQLite-backed Durable Object.
+    if (url.pathname.startsWith("/api/")) {
+      return env.REGISTRY.get(env.REGISTRY.idFromName("global")).fetch(req);
     }
     return new Response("not found\n", { status: 404 });
   },
@@ -192,5 +196,215 @@ export class Party {
     const stored = await this.ctx.storage.list({ prefix: "h:" });
     const events = [...stored.values()];
     try { ws.send(JSON.stringify({ t: "history", events })); } catch {}
+  }
+}
+
+/**
+ * Accounts + guilds. One SQLite-backed Durable Object holds everything —
+ * at guild scale a single SQLite is exactly what D1 would be anyway.
+ *
+ * Auth: "Authorization: Bearer <token>". The token is generated at
+ * registration and returned exactly once; only its SHA-256 is stored.
+ * Identity is the token — the detected game account / IGN are profile
+ * data, so accounts cannot be hijacked by spoofing packet contents.
+ */
+const GUILD_MEMBER_CAP = 50;
+const GUILD_EVENT_KEEP = 3000; // per guild; liked events are never trimmed
+const EVENT_DATA_MAX = 8 * 1024;
+
+async function sha256hex(s) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+export class Registry {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.sql = ctx.storage.sql;
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS accounts(
+      id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL,
+      ign TEXT DEFAULT '', icon INTEGER DEFAULT 0,
+      game_account TEXT DEFAULT '', created INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS guilds(
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, owner TEXT NOT NULL,
+      code TEXT UNIQUE NOT NULL, created INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS members(
+      guild TEXT NOT NULL, account TEXT NOT NULL,
+      role TEXT DEFAULT 'member', joined INTEGER,
+      PRIMARY KEY(guild, account))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS events(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, guild TEXT NOT NULL,
+      account TEXT NOT NULL, type TEXT NOT NULL, ts INTEGER NOT NULL,
+      data TEXT NOT NULL)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS ev_guild ON events(guild, id)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS likes(
+      event INTEGER NOT NULL, account TEXT NOT NULL, ts INTEGER,
+      PRIMARY KEY(event, account))`);
+  }
+
+  one(query, ...args) {
+    const rows = this.sql.exec(query, ...args).toArray();
+    return rows.length ? rows[0] : null;
+  }
+
+  async auth(req) {
+    const h = req.headers.get("Authorization") || "";
+    if (!h.startsWith("Bearer ")) return null;
+    const hash = await sha256hex(h.slice(7).trim());
+    return this.one("SELECT * FROM accounts WHERE token_hash = ?", hash);
+  }
+
+  myGuild(accountId) {
+    return this.one(
+      "SELECT g.*, m.role FROM members m JOIN guilds g ON g.id = m.guild WHERE m.account = ?",
+      accountId);
+  }
+
+  async fetch(req) {
+    const url = new URL(req.url);
+    const path = url.pathname;
+    let body = {};
+    if (req.method === "POST") {
+      try { body = await req.json(); } catch { return json({ ok: false, error: "bad json" }, 400); }
+    }
+    try {
+      if (path === "/api/register" && req.method === "POST") {
+        const token = crypto.randomUUID() + crypto.randomUUID();
+        const id = crypto.randomUUID();
+        this.sql.exec(
+          "INSERT INTO accounts(id, token_hash, ign, icon, game_account, created) VALUES(?,?,?,?,?,?)",
+          id, await sha256hex(token),
+          String(body.ign || "").slice(0, 24), Number(body.icon) || 0,
+          String(body.gameAccount || "").slice(0, 64), Date.now());
+        return json({ ok: true, accountId: id, token });
+      }
+
+      const acc = await this.auth(req);
+      if (!acc) return json({ ok: false, error: "unauthorized" }, 401);
+
+      if (path === "/api/profile" && req.method === "POST") {
+        this.sql.exec(
+          "UPDATE accounts SET ign = ?, icon = ?, game_account = ? WHERE id = ?",
+          String(body.ign || acc.ign).slice(0, 24),
+          Number(body.icon) || acc.icon,
+          String(body.gameAccount || acc.game_account).slice(0, 64), acc.id);
+        return json({ ok: true });
+      }
+
+      if (path === "/api/guild/create" && req.method === "POST") {
+        if (this.myGuild(acc.id)) return json({ ok: false, error: "already in a guild - leave it first" });
+        const name = String(body.name || "").trim().slice(0, 24);
+        if (name.length < 2) return json({ ok: false, error: "guild name too short" });
+        const id = crypto.randomUUID();
+        const code = genCode() + genCode().slice(0, 2); // 8 chars
+        this.sql.exec("INSERT INTO guilds(id, name, owner, code, created) VALUES(?,?,?,?,?)",
+            id, name, acc.id, code, Date.now());
+        this.sql.exec("INSERT INTO members(guild, account, role, joined) VALUES(?,?,?,?)",
+            id, acc.id, "owner", Date.now());
+        return json({ ok: true, guildId: id, name, code });
+      }
+
+      if (path === "/api/guild/join" && req.method === "POST") {
+        if (this.myGuild(acc.id)) return json({ ok: false, error: "already in a guild - leave it first" });
+        const code = String(body.code || "").trim().toUpperCase();
+        const g = this.one("SELECT * FROM guilds WHERE code = ?", code);
+        if (!g) return json({ ok: false, error: "no guild with that invite code" });
+        const n = this.one("SELECT COUNT(*) c FROM members WHERE guild = ?", g.id).c;
+        if (n >= GUILD_MEMBER_CAP) return json({ ok: false, error: "guild is full" });
+        this.sql.exec("INSERT INTO members(guild, account, role, joined) VALUES(?,?,?,?)",
+            g.id, acc.id, "member", Date.now());
+        return json({ ok: true, guildId: g.id, name: g.name, code: g.code });
+      }
+
+      if (path === "/api/guild/leave" && req.method === "POST") {
+        const g = this.myGuild(acc.id);
+        if (!g) return json({ ok: false, error: "not in a guild" });
+        this.sql.exec("DELETE FROM members WHERE guild = ? AND account = ?", g.id, acc.id);
+        const rest = this.sql.exec(
+            "SELECT account FROM members WHERE guild = ? ORDER BY joined LIMIT 1", g.id).toArray();
+        if (!rest.length) { // last one out: guild + its history dissolve
+          this.sql.exec("DELETE FROM likes WHERE event IN (SELECT id FROM events WHERE guild = ?)", g.id);
+          this.sql.exec("DELETE FROM events WHERE guild = ?", g.id);
+          this.sql.exec("DELETE FROM guilds WHERE id = ?", g.id);
+        } else if (g.owner === acc.id) { // ownership passes to the oldest member
+          this.sql.exec("UPDATE guilds SET owner = ? WHERE id = ?", rest[0].account, g.id);
+          this.sql.exec("UPDATE members SET role = 'owner' WHERE guild = ? AND account = ?",
+              g.id, rest[0].account);
+        }
+        return json({ ok: true });
+      }
+
+      if (path === "/api/guild/state") {
+        const g = this.myGuild(acc.id);
+        if (!g) return json({ ok: true, inGuild: false, accountId: acc.id });
+        const members = this.sql.exec(
+            "SELECT a.id, a.ign, a.icon, m.role FROM members m " +
+            "JOIN accounts a ON a.id = m.account WHERE m.guild = ? ORDER BY m.joined",
+            g.id).toArray();
+        return json({ ok: true, inGuild: true, guildId: g.id, name: g.name,
+            code: g.code, role: g.role, accountId: acc.id, members });
+      }
+
+      if (path === "/api/guild/event" && req.method === "POST") {
+        const g = this.myGuild(acc.id);
+        if (!g) return json({ ok: false, error: "not in a guild" });
+        const type = body.type === "death" ? "death" : "loot";
+        const data = JSON.stringify(body.data || {});
+        if (data.length > EVENT_DATA_MAX) return json({ ok: false, error: "event too large" });
+        const ts = Number(body.ts) || Date.now();
+        this.sql.exec("INSERT INTO events(guild, account, type, ts, data) VALUES(?,?,?,?,?)",
+            g.id, acc.id, type, ts, data);
+        const id = this.one("SELECT last_insert_rowid() id").id;
+        // Trim: keep the newest GUILD_EVENT_KEEP plus anything with a like.
+        this.sql.exec(
+            "DELETE FROM events WHERE guild = ?1 " +
+            "AND id NOT IN (SELECT id FROM events WHERE guild = ?1 ORDER BY id DESC LIMIT ?2) " +
+            "AND id NOT IN (SELECT event FROM likes)", g.id, GUILD_EVENT_KEEP);
+        return json({ ok: true, eventId: id });
+      }
+
+      if (path === "/api/guild/timeline") {
+        const g = this.myGuild(acc.id);
+        if (!g) return json({ ok: false, error: "not in a guild" });
+        const filter = url.searchParams.get("filter") || "all";
+        const before = Number(url.searchParams.get("before")) || Number.MAX_SAFE_INTEGER;
+        const limit = Math.min(100, Number(url.searchParams.get("limit")) || 50);
+        let where = "e.guild = ?1 AND e.id < ?2";
+        if (filter === "deaths") where += " AND e.type = 'death'";
+        if (filter === "liked") where += " AND EXISTS (SELECT 1 FROM likes l WHERE l.event = e.id)";
+        const rows = this.sql.exec(
+            "SELECT e.id, e.account, e.type, e.ts, e.data, a.ign, a.icon, " +
+            "(SELECT COUNT(*) FROM likes l WHERE l.event = e.id) likes, " +
+            "EXISTS (SELECT 1 FROM likes l WHERE l.event = e.id AND l.account = ?3) likedByMe " +
+            "FROM events e JOIN accounts a ON a.id = e.account " +
+            "WHERE " + where + " ORDER BY e.id DESC LIMIT ?4",
+            g.id, before, acc.id, limit).toArray();
+        for (const r of rows) {
+          try { r.data = JSON.parse(r.data); } catch { r.data = {}; }
+          r.mine = r.account === acc.id;
+        }
+        return json({ ok: true, accountId: acc.id, events: rows });
+      }
+
+      if (path === "/api/guild/like" && req.method === "POST") {
+        const g = this.myGuild(acc.id);
+        if (!g) return json({ ok: false, error: "not in a guild" });
+        const ev = this.one("SELECT id FROM events WHERE id = ? AND guild = ?",
+            Number(body.eventId) || 0, g.id);
+        if (!ev) return json({ ok: false, error: "no such event" });
+        if (body.on) {
+          this.sql.exec("INSERT OR IGNORE INTO likes(event, account, ts) VALUES(?,?,?)",
+              ev.id, acc.id, Date.now());
+        } else {
+          this.sql.exec("DELETE FROM likes WHERE event = ? AND account = ?", ev.id, acc.id);
+        }
+        const likes = this.one("SELECT COUNT(*) c FROM likes WHERE event = ?", ev.id).c;
+        return json({ ok: true, likes });
+      }
+
+      return new Response("not found\n", { status: 404 });
+    } catch (e) {
+      return json({ ok: false, error: "server error: " + (e.message || e) }, 500);
+    }
   }
 }

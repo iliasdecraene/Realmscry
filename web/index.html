@@ -30,6 +30,7 @@
     --live:      #199e70;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  [hidden] { display: none !important; } /* beats display:flex/grid rules */
   html, body { height: 100%; }
   body {
     background: var(--surface-0);
@@ -53,6 +54,29 @@
     display: flex; align-items: center; gap: 9px;
   }
   header h1 img { width: 22px; height: 22px; image-rendering: pixelated; }
+
+  /* ---- View tabs (Tracker | Guild) ---- */
+  .tabs { display: flex; gap: 4px; margin-left: 18px; }
+  .tabs button {
+    border: none; background: none; color: var(--text-muted);
+    font: inherit; font-size: 13px; font-weight: 600;
+    padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  }
+  .tabs button:hover { color: var(--text-secondary); }
+  .tabs button.on { background: var(--surface-2); color: var(--text-primary); }
+
+  /* ---- Segmented filter (All | Liked | Deaths) ---- */
+  .card-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+  .card-head h2 { margin-bottom: 0; }
+  .seg { display: flex; gap: 2px; margin-left: auto; }
+  .seg button {
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-muted); font: inherit; font-size: 11px; font-weight: 650;
+    letter-spacing: .04em; padding: 3px 10px; cursor: pointer;
+  }
+  .seg button:first-child { border-radius: 6px 0 0 6px; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; }
+  .seg button.on { background: var(--surface-2); color: var(--text-primary); }
   #map { color: var(--text-secondary); font-size: 13px; }
   #conn {
     display: flex; align-items: center; gap: 7px;
@@ -382,6 +406,91 @@
   .slot.empty { opacity: .4; }
   .me-sep { border-top: 1px dashed var(--border); margin: 14px 2px 6px; }
 
+  /* ---- Death cards ---- */
+  .death-row {
+    border: 1px solid #6d2b2b; border-radius: 8px;
+    background: rgba(160, 45, 45, .07);
+    padding: 10px 12px; margin: 8px 0;
+  }
+  .death-row + .loot-row { border-top: none; }
+  .d-head { display: flex; align-items: center; gap: 10px; }
+  .d-skull { font-size: 15px; }
+  .d-ava { width: 34px; height: 34px; image-rendering: pixelated; flex: none; }
+  .d-who { flex: 1; min-width: 0; }
+  .d-name { font-weight: 650; }
+  .d-cause { color: var(--text-secondary); font-size: 12px; }
+  .d-cause b { color: #e66767; font-weight: 650; }
+  .d-badges { display: flex; gap: 6px; flex: none; align-items: center; }
+  .d-badge {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+    padding: 2px 7px; border-radius: 999px;
+    background: var(--surface-2); color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+  .d-badge.maxed8 { color: var(--you); border-color: var(--you); }
+  .d-gear { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .d-gear .slot { width: 24px; height: 24px; }
+  .d-gear .slot img { width: 18px; height: 18px; }
+  .d-gear .gsep { width: 1px; background: var(--border); margin: 2px 3px; }
+
+  /* ---- Guild view ---- */
+  .guild-view { display: flex; flex-direction: column; gap: 20px; flex: 1; min-height: 0; }
+  .guild-forms { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 780px) { .guild-forms { grid-template-columns: 1fr; } }
+  .guild-forms input {
+    width: 100%; margin: 8px 0; padding: 8px 10px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text-primary); font: inherit; font-size: 13px;
+  }
+  .guild-forms button, .g-btn {
+    border: none; border-radius: 6px; background: var(--bar); color: #fff;
+    font: inherit; font-size: 12.5px; font-weight: 650;
+    padding: 8px 16px; cursor: pointer;
+  }
+  .g-btn.ghost { background: var(--surface-2); color: var(--text-secondary);
+    border: 1px solid var(--border); }
+  .g-hint { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+  .g-err { color: #e66767; font-size: 12px; margin-top: 8px; min-height: 15px; }
+  .g-info { flex: none; }
+  .g-info-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .g-name { font-size: 17px; font-weight: 700; }
+  .g-code {
+    font-weight: 700; letter-spacing: .14em; cursor: pointer;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 10px; font-size: 13px;
+  }
+  .g-roster { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .g-member {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 12px 3px 5px; font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .g-member img { width: 22px; height: 22px; image-rendering: pixelated; }
+  .g-member .crown { color: var(--you); }
+  .g-tl-card { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #gtl {
+    flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px;
+    scrollbar-width: thin; scrollbar-color: var(--surface-2) transparent;
+  }
+  .g-ev { border-top: 1px solid var(--border); padding: 8px 0 2px; }
+  .g-ev:first-child { border-top: none; }
+  .g-ev-head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--text-secondary);
+  }
+  .g-ev-head img { width: 20px; height: 20px; image-rendering: pixelated; }
+  .g-ev-head .gname { font-weight: 650; }
+  .g-ev-head .gago { color: var(--text-muted); margin-left: auto; }
+  .heart {
+    border: none; background: none; cursor: pointer; font: inherit;
+    font-size: 13px; color: var(--text-muted); padding: 2px 6px;
+    border-radius: 6px; flex: none;
+  }
+  .heart:hover { background: var(--surface-2); }
+  .heart.liked { color: #f06292; }
+  .g-ev .loot-row, .g-ev .death-row { margin: 2px 0 6px; }
+
   /* ---- Your recent bosses (collapsible personal history) ---- */
   .bl-toggle {
     display: flex; align-items: center; gap: 8px;
@@ -429,19 +538,29 @@
 <div class="wrap">
   <header style="position:relative">
     <h1><img src="/favicon.png" alt="" onerror="this.remove()">Realmscry</h1>
+    <nav class="tabs">
+      <button id="navTracker" class="on" onclick="setView('tracker')">Tracker</button>
+      <button id="navGuild" onclick="setView('guild')">Guild</button>
+    </nav>
     <span id="map"></span>
     <span class="party-chip off" id="partyChip" onclick="togglePartyPop()">Party</span>
     <span id="conn"><span class="dot"></span><span id="connText">connecting…</span></span>
     <div class="party-pop" id="partyPop" hidden></div>
   </header>
 
-  <div class="grid">
+  <div class="grid" id="viewTracker">
     <div class="col-left">
       <section class="card roster-card" id="rosterCard" hidden></section>
       <section class="card loot-card">
-        <h2>Recent Loot</h2>
+        <div class="card-head">
+          <h2>Timeline</h2>
+          <div class="seg" id="tlSeg">
+            <button class="on" onclick="setTlFilter('all')">All</button>
+            <button onclick="setTlFilter('deaths')">Deaths</button>
+          </div>
+        </div>
         <div class="shiny-toast" id="shinyToast"></div>
-        <div id="loot"><div class="empty">No white / orange / red bags yet.</div></div>
+        <div id="loot"><div class="empty">No drops yet.</div></div>
       </section>
     </div>
 
@@ -450,6 +569,8 @@
       <div id="boss"><div class="empty">No boss kills recorded yet.</div></div>
     </section>
   </div>
+
+  <div class="guild-view" id="viewGuild" hidden></div>
 </div>
 
 <script>
@@ -461,6 +582,11 @@ let bossLogOpen = true;    // dropdown state survives re-renders
 let party = { joined: false, connected: false, code: "", name: "", id: "", members: [], events: [] };
 let partyPopOpen = false;
 const partySeen = new Set();
+let view = "tracker";      // "tracker" | "guild"
+let tlFilter = "all";      // local timeline: "all" | "deaths"
+// Guild state lives on the backend; the jar proxies /guild/* for us.
+let guild = { loaded: false, inGuild: false, name: "", code: "", role: "",
+              accountId: "", members: [], filter: "all", events: [], error: "" };
 
 // Member colors: gold is always "you"; everyone else gets a stable palette
 // color by their position in the sorted member-id list (identical on every
@@ -515,10 +641,40 @@ const dayLabel = ts => {
   return d.toLocaleDateString(undefined, opts);
 };
 
-const lootRow = l => {
+// A member's death, rendered as a card: who + killer, the character, its
+// gear, everything carried, and the n/8 maxed badge.
+const deathRow = (l, plain) => {
+  const c = !plain && party.joined ? memberColor(l.fromId || party.id) : null;
+  const slots = arr => (arr || []).map(i => i.id > 0
+    ? `<span class="slot" title="${esc(i.name || "")}"><img src="/icon/${i.id}" alt=""
+         onerror="this.parentElement.classList.add('empty');this.remove()"></span>`
+    : '<span class="slot empty"></span>').join("");
+  const carried = (l.backpack || []).filter(i => i.id > 0);
+  return `
+    <div class="death-row"${c ? ` style="border-left:3px solid ${c}"` : ""}>
+      <div class="d-head">
+        <span class="d-skull">☠</span>
+        ${l.icon > 0 ? `<img class="d-ava" src="/icon/${l.icon}" alt="" onerror="this.remove()">` : ""}
+        <div class="d-who">
+          <div class="d-name">${esc(l.name || "Unknown")}${l.from && l.fromId !== party.id
+            ? ` <span class="from-chip"${c ? ` style="background:${c}"` : ""}>${esc(l.from)}</span>` : ""}</div>
+          <div class="d-cause">killed by <b>${esc(l.killedBy || "?")}</b></div>
+        </div>
+        <div class="d-badges">
+          ${l.maxed >= 0 ? `<span class="d-badge${l.maxed >= 8 ? " maxed8" : ""}">${l.maxed}/8</span>` : ""}
+          ${l.fame > 0 ? `<span class="d-badge">${fmt(l.fame)} fame</span>` : ""}
+        </div>
+      </div>
+      <div class="d-gear">${slots(l.equip)}${carried.length
+        ? '<span class="gsep"></span>' + slots(carried) : ""}</div>
+      <div class="loot-meta">${esc(l.map || "")} · ${ago(l.ts)}</div>
+    </div>`;
+};
+
+const lootRow = (l, plain) => {
   // In a party every drop wears its owner's color on the left edge
   // (gold = you, palette color = that member).
-  const c = party.joined ? memberColor(l.fromId || party.id) : null;
+  const c = !plain && party.joined ? memberColor(l.fromId || party.id) : null;
   const edge = c ? `border-left:3px solid ${c};${l.shiny ? "" : "padding-left:9px"}` : "";
   return `
     <div class="loot-row${l.shiny ? " shiny" : ""}${l.ts === justTs ? " pop" : ""}"${
@@ -543,18 +699,36 @@ const lootRow = l => {
     </div>`;
 };
 
-// Own loot plus party members' drops (theirs carry `from`), newest first.
+// Own timeline (drops + deaths) plus party members' events, newest first.
 function combinedLoot() {
-  const remote = party.events.filter(e => e.t === "loot" && e.fromId !== party.id);
-  if (!remote.length) return lootLog;
-  return lootLog.concat(remote).slice().sort((a, b) => b.ts - a.ts).slice(0, 2000);
+  const remote = party.events.filter(e =>
+      (e.t === "loot" || e.t === "death") && e.fromId !== party.id);
+  const all = remote.length
+      ? lootLog.concat(remote).slice().sort((a, b) => b.ts - a.ts).slice(0, 2000)
+      : lootLog;
+  if (tlFilter === "deaths") {
+    // "your deaths": own entries only
+    return all.filter(l => (l.type === "death" || l.t === "death") && !l.from);
+  }
+  return all;
 }
+
+function setTlFilter(f) {
+  tlFilter = f;
+  [...$("tlSeg").children].forEach((b, i) =>
+      b.classList.toggle("on", (i === 0) === (f === "all")));
+  renderLoot();
+}
+
+const isDeath = l => l.type === "death" || l.t === "death";
 
 function renderLoot() {
   const el = $("loot");
   const list = combinedLoot();
   if (!list.length) {
-    el.innerHTML = '<div class="empty">No white / orange / red bags yet.</div>';
+    el.innerHTML = `<div class="empty">${tlFilter === "deaths"
+        ? "No deaths recorded. Long may it last."
+        : "No drops yet."}</div>`;
     return;
   }
   // A divider line marks each day boundary; today's group at the very top
@@ -567,7 +741,7 @@ function renderLoot() {
       html += `<div class="day-sep">${dayLabel(l.ts)}</div>`;
     }
     prevKey = k;
-    html += lootRow(l);
+    html += isDeath(l) ? deathRow(l) : lootRow(l);
   }
   el.innerHTML = html;
   justTs = 0;
@@ -855,11 +1029,169 @@ function applyPartyFrame(f) {
     let any = false;
     for (const e of f.events || []) any = addPartyEvent(e) || any;
     if (any) { renderLoot(); renderBoss(); }
-  } else if (f.t === "loot" || f.t === "boss") {
+  } else if (f.t === "loot" || f.t === "boss" || f.t === "death") {
     if (addPartyEvent(f)) {
-      if (f.t === "loot") renderLoot(); else renderBoss();
+      if (f.t === "boss") renderBoss(); else renderLoot();
     }
   }
+}
+
+// ---- View switching + Guild ----
+function setView(v) {
+  view = v;
+  $("navTracker").classList.toggle("on", v === "tracker");
+  $("navGuild").classList.toggle("on", v === "guild");
+  $("viewTracker").hidden = v !== "tracker";
+  $("viewGuild").hidden = v !== "guild";
+  if (v === "guild") refreshGuild();
+}
+
+async function api(path, body) {
+  const opts = body !== undefined
+      ? { method: "POST", body: JSON.stringify(body) } : {};
+  const r = await fetch(path, opts);
+  return r.json();
+}
+
+async function refreshGuild() {
+  try {
+    const s = await api("/guild/status");
+    guild.loaded = true;
+    guild.error = "";
+    if (s.ok === false && s.error && !String(s.error).startsWith("no account")) {
+      guild.error = s.error;
+    }
+    guild.inGuild = !!s.inGuild;
+    if (s.inGuild) {
+      guild.name = s.name; guild.code = s.code; guild.role = s.role;
+      guild.accountId = s.accountId; guild.members = s.members || [];
+      const t = await api("/guild/timeline?filter=" + guild.filter);
+      if (t.ok) { guild.events = t.events || []; guild.accountId = t.accountId || guild.accountId; }
+      else guild.error = t.error || "";
+    }
+  } catch (e) {
+    guild.error = "tracker unreachable";
+  }
+  renderGuild();
+}
+
+function setGuildFilter(f) {
+  guild.filter = f;
+  refreshGuild();
+}
+
+async function guildCreate() {
+  const name = $("gName").value.trim();
+  if (name.length < 2) { $("gErr").textContent = "Guild name too short."; return; }
+  $("gErr").textContent = "Creating…";
+  const r = await api("/guild/create", { name });
+  if (!r.ok) { $("gErr").textContent = r.error || "Failed."; return; }
+  refreshGuild();
+}
+async function guildJoin() {
+  const code = $("gCode").value.trim();
+  if (!code) { $("gErr2").textContent = "Enter an invite code."; return; }
+  $("gErr2").textContent = "Joining…";
+  const r = await api("/guild/join", { code });
+  if (!r.ok) { $("gErr2").textContent = r.error || "Failed."; return; }
+  refreshGuild();
+}
+async function guildLeave() {
+  if (!confirm("Leave " + guild.name + "?")) return;
+  await api("/guild/leave", {});
+  guild.inGuild = false;
+  refreshGuild();
+}
+async function guildLike(eventId, on) {
+  const r = await api("/guild/like", { eventId, on });
+  if (r.ok) {
+    const e = guild.events.find(x => x.id === eventId);
+    if (e) { e.likes = r.likes; e.likedByMe = on ? 1 : 0; }
+    if (guild.filter === "liked" && !on) {
+      guild.events = guild.events.filter(x => x.id !== eventId || x.likes > 0);
+    }
+    renderGuild();
+  }
+}
+
+function guildEventHtml(e) {
+  const d = { ...e.data, ts: e.data.ts || e.ts };
+  delete d.from; delete d.fromId; // no party colors inside the guild view
+  const body = e.type === "death" ? deathRow(d, true) : lootRow(d, true);
+  return `
+    <div class="g-ev">
+      <div class="g-ev-head">
+        ${e.icon > 0 ? `<img src="/icon/${e.icon}" alt="" onerror="this.remove()">` : ""}
+        <span class="gname">${esc(e.ign || "Unknown")}${e.mine ? " (you)" : ""}</span>
+        <span class="gago">${ago(e.ts)}</span>
+        <button class="heart${e.likedByMe ? " liked" : ""}"
+          onclick="guildLike(${e.id}, ${e.likedByMe ? "false" : "true"})">
+          ${e.likedByMe ? "♥" : "♡"}${e.likes > 0 ? " " + e.likes : ""}</button>
+      </div>
+      ${body}
+    </div>`;
+}
+
+function renderGuild() {
+  const el = $("viewGuild");
+  if (!guild.loaded) {
+    el.innerHTML = '<section class="card"><div class="empty">Loading guild…</div></section>';
+    return;
+  }
+  if (!guild.inGuild) {
+    el.innerHTML = `
+      <div class="guild-forms">
+        <section class="card">
+          <h2>Create a guild</h2>
+          <input id="gName" maxlength="24" placeholder="Guild name">
+          <button onclick="guildCreate()">Create guild</button>
+          <div class="g-hint">You become the owner and get an invite code to share.</div>
+          <div class="g-err" id="gErr">${esc(guild.error || "")}</div>
+        </section>
+        <section class="card">
+          <h2>Join a guild</h2>
+          <input id="gCode" maxlength="12" placeholder="Invite code" style="text-transform:uppercase">
+          <button onclick="guildJoin()">Join guild</button>
+          <div class="g-hint">Ask a member for the guild's invite code.</div>
+          <div class="g-err" id="gErr2"></div>
+        </section>
+      </div>`;
+    return;
+  }
+  const members = guild.members.map(m => `
+    <span class="g-member">
+      ${m.icon > 0 ? `<img src="/icon/${m.icon}" alt="" onerror="this.remove()">` : ""}
+      ${m.role === "owner" ? '<span class="crown" title="Owner">♛</span>' : ""}
+      ${esc(m.ign || "Unknown")}${m.id === guild.accountId ? " (you)" : ""}
+    </span>`).join("");
+  const evs = guild.events.length
+      ? guild.events.map(guildEventHtml).join("")
+      : `<div class="empty">${guild.filter === "liked"
+          ? "Nothing liked yet — hit the ♡ on a drop worth keeping."
+          : guild.filter === "deaths" ? "No deaths recorded. A disciplined guild."
+          : "No guild activity yet. Drops and deaths land here as members play."}</div>`;
+  el.innerHTML = `
+    <section class="card g-info">
+      <div class="g-info-top">
+        <span class="g-name">${esc(guild.name)}</span>
+        <span class="g-code" title="Click to copy the invite code"
+          onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(guild.code)}')">${esc(guild.code)}</span>
+        <span class="g-hint" style="margin-top:0">invite code · click to copy</span>
+        <button class="g-btn ghost" style="margin-left:auto" onclick="guildLeave()">Leave</button>
+      </div>
+      <div class="g-roster">${members}</div>
+    </section>
+    <section class="card g-tl-card">
+      <div class="card-head">
+        <h2>Guild Timeline</h2>
+        <div class="seg">
+          <button class="${guild.filter === "all" ? "on" : ""}" onclick="setGuildFilter('all')">All</button>
+          <button class="${guild.filter === "liked" ? "on" : ""}" onclick="setGuildFilter('liked')">Liked</button>
+          <button class="${guild.filter === "deaths" ? "on" : ""}" onclick="setGuildFilter('deaths')">Deaths</button>
+        </div>
+      </div>
+      <div id="gtl">${evs}</div>
+    </section>`;
 }
 
 function connect() {
@@ -889,6 +1221,12 @@ function connect() {
     bossLog = JSON.parse(e.data);
     renderBoss();
   });
+  es.addEventListener("death", e => {
+    const d = JSON.parse(e.data);
+    lootLog.unshift(d);
+    if (lootLog.length > 2000) lootLog.pop();
+    renderLoot();
+  });
   es.addEventListener("party", e => applyPartyFrame(JSON.parse(e.data)));
   es.addEventListener("partystatus", e => {
     const d = JSON.parse(e.data);
@@ -912,7 +1250,11 @@ function connect() {
   es.addEventListener("map", e => setMap(JSON.parse(e.data).map));
 }
 connect();
-setInterval(() => { renderLoot(); if (boss || bossLog.length) renderBoss(); }, 30000);
+setInterval(() => {
+  if (view === "guild") { refreshGuild(); return; }
+  renderLoot();
+  if (boss || bossLog.length) renderBoss();
+}, 30000);
 </script>
 </body>
 </html>

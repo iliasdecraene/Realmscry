@@ -12,6 +12,7 @@ PacketDebug/
 loot-history.jsonl
 boss-history.jsonl
 party.properties
+account.properties
 sound/
 
 # internal dev docs & scratch (kept local on purpose)

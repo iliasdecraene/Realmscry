@@ -83,7 +83,11 @@ public class AssetBootstrap {
             }
             String sig = res.lastModified() + ":" + res.length();
             String prev = Files.exists(MARKER) ? Files.readString(MARKER).trim() : "";
-            if (sig.equals(prev)) return; // assets already match the client
+            // Re-extract when the client updated, or when features need XML
+            // data an older extraction didn't produce (players.xml powers the
+            // death-card "maxed" badge).
+            boolean xmlMissing = !Files.isRegularFile(Paths.get("assets", "xml", "players.xml"));
+            if (sig.equals(prev) && !xmlMissing) return; // assets already current
             System.out.println("[Assets] Game update detected - extracting fresh assets from "
                     + res.getAbsolutePath());
             javax.swing.JFrame progress = showProgressWindow();
