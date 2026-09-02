@@ -14,11 +14,17 @@
 
 ## What it does
 
-- **Recent Loot** — live feed of your white / orange / red bag drops with item
+- **Timeline** — live feed of your white / orange / red bag drops with item
   and bag sprites, **shiny detection** (glow, sparkle, popup + sound cue) and
   **enchantment-slot indicators** (the 1–4 diamond clusters, just like in
-  game). Every drop is kept in a persistent, scrollable history with day
-  dividers.
+  game). **Deaths** appear as full cards: your character, equipment,
+  everything you were carrying, who killed you, fame, and how maxed you
+  were (n/8). Everything persists in a scrollable history with day dividers
+  and All / Deaths filters.
+- **Guilds** — create a guild in the Guild tab, share its invite code, and
+  see every member's drops and deaths in a shared guild timeline. Hit the
+  ♡ on a highlight to pin it to the guild's **Liked** list. Accounts are
+  created silently and securely on first use — nothing to sign up for.
 - **Last Boss Killed** — damage leaderboard for the boss you just killed:
   top-5 players with avatars and their equipped loadouts, plus your own rank
   highlighted even when you're not in the top 5.
