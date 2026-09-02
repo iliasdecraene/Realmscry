@@ -14,9 +14,11 @@
  *
  * Client->server frames (JSON text, <= 16 KB):
  *   { t: "loot", ... }   { t: "boss", ... }   { t: "ping" }
+ *   { t: "profile", icon, ign }  member's avatar sprite id + in-game name;
+ *                                stored per member and merged into members
  * Server->client frames:
  *   { t: "history", events: [...] }        on join
- *   { t: "members", members: [{id,name}] } on any join/leave
+ *   { t: "members", members: [{id,name,icon,ign}] } on join/leave/profile
  *   { t: "loot"|"boss", from, fromId, ...} relayed events (also echoed to
  *                                          sender so all UIs share one path)
  *   { t: "pong" }
@@ -48,7 +50,7 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/" || url.pathname === "") {
-      return new Response("Realmscry party relay v2 — see github.com/iliasdecraene/Realmscry\n");
+      return new Response("Realmscry party relay v3 — see github.com/iliasdecraene/Realmscry\n");
     }
     if (url.pathname === "/party" && req.method === "POST") {
       return json({ code: genCode() });
@@ -87,7 +89,7 @@ export class Party {
     server.serializeAttachment({ id, name });
 
     await this.sendHistory(server);
-    this.broadcastMembers();
+    await this.broadcastMembers();
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -112,7 +114,18 @@ export class Party {
           try { sock.close(1011, "gone"); } catch {}
         }
       }
-      if (lost) this.broadcastMembers();
+      if (lost) await this.broadcastMembers();
+      return;
+    }
+    if (ev.t === "profile") {
+      const who = ws.deserializeAttachment();
+      if (who) {
+        await this.ctx.storage.put("p:" + who.id, {
+          icon: Number(ev.icon) || 0,
+          ign: String(ev.ign || "").slice(0, 24),
+        });
+        await this.broadcastMembers();
+      }
       return;
     }
     if (!ALLOWED_TYPES.has(ev.t)) return;
@@ -136,22 +149,25 @@ export class Party {
         try { sock.close(1011, "gone"); } catch {}
       }
     }
-    if (lostSomeone) this.broadcastMembers();
+    if (lostSomeone) await this.broadcastMembers();
   }
 
-  webSocketClose() {
-    this.broadcastMembers();
+  async webSocketClose() {
+    await this.broadcastMembers();
   }
 
-  webSocketError() {
-    this.broadcastMembers();
+  async webSocketError() {
+    await this.broadcastMembers();
   }
 
-  broadcastMembers() {
+  async broadcastMembers() {
+    const profiles = await this.ctx.storage.list({ prefix: "p:" });
     const members = [];
     for (const sock of this.ctx.getWebSockets()) {
       const a = sock.deserializeAttachment();
-      if (a) members.push({ id: a.id, name: a.name });
+      if (!a) continue;
+      const p = profiles.get("p:" + a.id) || {};
+      members.push({ id: a.id, name: a.name, icon: p.icon || 0, ign: p.ign || "" });
     }
     const out = JSON.stringify({ t: "members", members });
     for (const sock of this.ctx.getWebSockets()) {

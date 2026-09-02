@@ -444,6 +444,24 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         this.party = party;
     }
 
+    /** In-game names of the other party members (for leaderboard matching). */
+    public java.util.Set<String> partyMemberIgns() {
+        PartyClient p = party;
+        if (p == null || !p.joined()) return java.util.Collections.emptySet();
+        java.util.Set<String> names = new java.util.HashSet<>();
+        synchronized (partyEvents) {
+            for (var el : partyMembers) {
+                if (!el.isJsonObject()) continue;
+                JsonObject m = el.getAsJsonObject();
+                if (m.has("id") && p.installId().equals(m.get("id").getAsString())) continue;
+                String ign = m.has("ign") ? m.get("ign").getAsString() : "";
+                if (!ign.isEmpty()) names.add(ign);
+                else if (m.has("name")) names.add(m.get("name").getAsString());
+            }
+        }
+        return names;
+    }
+
     private JsonObject partyStateJson() {
         JsonObject o = new JsonObject();
         PartyClient p = party;

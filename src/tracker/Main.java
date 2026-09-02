@@ -67,6 +67,8 @@ public class Main {
         Sounds.init(); // preload clips off the capture thread
 
         PartyClient party = new PartyClient(web);
+        party.setProfileSource(state::myIcon, state::myIgn);
+        state.setPartyNames(web::partyMemberIgns);
         web.setParty(party);
         party.autoRejoin(); // reconnect to a saved party silently
 

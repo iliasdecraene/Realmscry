@@ -172,8 +172,30 @@
   /* ---- Loot feed ---- */
   .sprite { image-rendering: pixelated; vertical-align: -3px; }
 
-  .loot-card { display: flex; flex-direction: column; min-height: 0; }
+  .col-left { display: flex; flex-direction: column; gap: 20px; min-height: 0; }
+  .loot-card { display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .loot-card h2 { flex: none; }
+
+  /* ---- Party roster (top-left, one tile per member) ---- */
+  .roster-card { flex: none; padding: 14px 16px 12px; }
+  .roster { display: flex; flex-wrap: wrap; gap: 10px; }
+  .pm-tile {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    border: 2px solid var(--border); border-radius: 8px;
+    padding: 8px 10px 6px; min-width: 66px;
+    background: var(--surface-2);
+  }
+  .pm-ava {
+    width: 36px; height: 36px; border-radius: 6px;
+    background: var(--surface-1);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .pm-ava img { width: 34px; height: 34px; image-rendering: pixelated; }
+  .pm-name {
+    font-size: 11px; font-weight: 650; max-width: 86px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pm-you { font-size: 9px; font-weight: 700; letter-spacing: .08em; color: var(--text-muted); }
   #loot {
     flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px;
     scrollbar-width: thin; scrollbar-color: var(--surface-2) transparent;
@@ -414,11 +436,14 @@
   </header>
 
   <div class="grid">
-    <section class="card loot-card">
-      <h2>Recent Loot</h2>
-      <div class="shiny-toast" id="shinyToast"></div>
-      <div id="loot"><div class="empty">No white / orange / red bags yet.</div></div>
-    </section>
+    <div class="col-left">
+      <section class="card roster-card" id="rosterCard" hidden></section>
+      <section class="card loot-card">
+        <h2>Recent Loot</h2>
+        <div class="shiny-toast" id="shinyToast"></div>
+        <div id="loot"><div class="empty">No white / orange / red bags yet.</div></div>
+      </section>
+    </div>
 
     <section class="card">
       <h2>Last Boss Killed</h2>
@@ -432,11 +457,29 @@ const $ = id => document.getElementById(id);
 let lootLog = [];
 let boss = null;
 let bossLog = [];          // your own line for the 5 most recent kills
-let bossLogOpen = false;   // dropdown state survives re-renders
+let bossLogOpen = true;    // dropdown state survives re-renders
 let party = { joined: false, connected: false, code: "", name: "", id: "", members: [], events: [] };
 let partyPopOpen = false;
-let partyBossOpen = true;  // party boss section expanded by default
 const partySeen = new Set();
+
+// Member colors: gold is always "you"; everyone else gets a stable palette
+// color by their position in the sorted member-id list (identical on every
+// member's screen). Authors who already left fall back to an id hash.
+const YOU_COLOR = "#e8c35a";
+const PM_PALETTE = ["#4fc3f7", "#81c784", "#ba68c8", "#ff8a65",
+                    "#f06292", "#4db6ac", "#9575cd", "#90a4ae"];
+const hashStr = s => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); };
+function memberColor(id) {
+  if (!id) return null;
+  if (id === party.id) return YOU_COLOR;
+  const others = party.members.filter(m => m.id !== party.id).map(m => m.id).sort();
+  const i = others.indexOf(id);
+  return PM_PALETTE[(i >= 0 ? i : hashStr(id)) % PM_PALETTE.length];
+}
+// Leaderboard rows carry in-game names; match them to party members.
+function memberByName(n) {
+  return party.members.find(m => m.id !== party.id && ((m.ign && m.ign === n) || m.name === n));
+}
 
 const fmt = n => {
   if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
@@ -472,8 +515,14 @@ const dayLabel = ts => {
   return d.toLocaleDateString(undefined, opts);
 };
 
-const lootRow = l => `
-    <div class="loot-row${l.shiny ? " shiny" : ""}${l.ts === justTs ? " pop" : ""}">
+const lootRow = l => {
+  // In a party every drop wears its owner's color on the left edge
+  // (gold = you, palette color = that member).
+  const c = party.joined ? memberColor(l.fromId || party.id) : null;
+  const edge = c ? `border-left:3px solid ${c};${l.shiny ? "" : "padding-left:9px"}` : "";
+  return `
+    <div class="loot-row${l.shiny ? " shiny" : ""}${l.ts === justTs ? " pop" : ""}"${
+      edge ? ` style="${edge}"` : ""}>
       <span class="bag-chip bag-${l.tier}"><span class="bagwrap">${
         l.bagType ? `<img class="sprite" src="/icon/${l.bagType}" alt=""
           onerror="this.insertAdjacentHTML('afterend','&lt;span class=&quot;swatch&quot;&gt;&lt;/span&gt;');this.remove()">`
@@ -489,9 +538,10 @@ const lootRow = l => `
             n ? `<span class="ench e${n}">${"<i></i>".repeat(n)}</span>` : ""
           }</span>${esc(i.name)}</span>`; }).join("")}</div>
         <div class="loot-meta">${l.from && l.fromId !== party.id
-          ? `<span class="from-chip">${esc(l.from)}</span> · ` : ""}${esc(l.map || "")} · ${ago(l.ts)}</div>
+          ? `<span class="from-chip"${c ? ` style="background:${c}"` : ""}>${esc(l.from)}</span> · ` : ""}${esc(l.map || "")} · ${ago(l.ts)}</div>
       </div>
     </div>`;
+};
 
 // Own loot plus party members' drops (theirs carry `from`), newest first.
 function combinedLoot() {
@@ -535,55 +585,40 @@ function showShinyToast(l) {
   toastTimer = setTimeout(() => t.classList.remove("show"), 5000);
 }
 
-// Your line in the 5 most recent kills, tucked under a dropdown.
-function bossLogHtml() {
-  if (!bossLog.length) return "";
-  const rows = bossLog.map(b => {
-    const pct = b.total > 0 ? Math.round(100 * b.myDmg / b.total) : 0;
-    return `
-    <div class="bl-row" title="${(b.myDmg || 0).toLocaleString()} damage">
-      ${b.icon > 0 ? `<img class="bl-icon" src="/icon/${b.icon}" alt=""
-        onerror="this.insertAdjacentHTML('afterend','&lt;span class=&quot;blank34&quot;&gt;&lt;/span&gt;');this.remove()">`
-        : '<span class="blank34"></span>'}
-      <div class="bl-body">
-        <div class="bl-topline">
-          <span class="bl-name">${esc(b.name)}</span>
-          <span class="rank-chip">${b.myRank ? "#" + b.myRank : "—"}</span>
-          <span class="dval">${fmt(b.myDmg || 0)}<span class="pct">${pct}%</span></span>
-          <span class="bl-ago">${ago(b.ts)}</span>
-        </div>
-        <div class="track"><div class="fill" style="width:${Math.max(2, pct)}%"></div></div>
-      </div>
-    </div>`;
-  }).join("");
-  return `
-    <div class="bl-toggle${bossLogOpen ? " open" : ""}" onclick="toggleBossLog()">
-      Your Recent Bosses <span class="bl-count">${bossLog.length}</span><span class="chev">▾</span>
-    </div>
-    <div class="bl-list"${bossLogOpen ? "" : " hidden"}>${rows}</div>`;
-}
-function toggleBossLog() {
-  bossLogOpen = !bossLogOpen;
-  renderBoss();
-}
-
-// Party members' boss lines, grouped into one card per boss fight
-// (same boss name within 3 minutes = same fight, one line per member).
-function partyBossGroups() {
-  const evs = party.events.filter(e => e.t === "boss").slice().sort((a, b) => b.ts - a.ts);
+// Recent bosses: one card per fight. Solo it's just your line; in a party
+// every member's line for that fight (same boss name within 3 minutes)
+// stacks in the same card, each in their color. Own kills come both from
+// the persisted bossLog and the relay echo — deduped by timestamp.
+function recentBossGroups() {
+  const evs = [];
+  const seen = new Set();
+  if (party.joined) {
+    for (const e of party.events) {
+      if (e.t !== "boss") continue;
+      evs.push(e);
+      seen.add((e.fromId || "") + "|" + e.ts);
+    }
+  }
+  for (const b of bossLog) {
+    if (!seen.has((party.id || "") + "|" + b.ts)) {
+      evs.push({ ...b, fromId: party.id || "me", from: "You" });
+    }
+  }
+  evs.sort((a, b) => b.ts - a.ts);
   const groups = [];
   for (const e of evs) {
-    let g = groups.find(g => g.name === e.name && Math.abs(g.ts - e.ts) < 180000);
-    if (g && g.lines.some(l => l.fromId === e.fromId)) g = null; // one line each
-    if (!g) { g = { name: e.name, icon: e.icon, ts: e.ts, lines: [] }; groups.push(g); }
-    g.lines.push(e);
+    const g = groups.find(g => g.name === e.name && Math.abs(g.ts - e.ts) < 180000);
+    if (g) {
+      if (!g.lines.some(l => l.fromId === e.fromId)) g.lines.push(e);
+    } else {
+      groups.push({ name: e.name, icon: e.icon, ts: e.ts, lines: [e] });
+    }
   }
   return groups.slice(0, 5);
 }
 
-function partyBossHtml() {
-  if (!party.joined) return "";
-  const groups = partyBossGroups();
+function recentBossesHtml() {
+  const groups = recentBossGroups();
   if (!groups.length) return "";
   const cards = groups.map(g => `
     <div class="pb-card">
@@ -594,23 +629,24 @@ function partyBossHtml() {
       </div>
       ${g.lines.slice().sort((a, b) => (b.myDmg || 0) - (a.myDmg || 0)).map(l => {
         const pct = l.total > 0 ? Math.round(100 * (l.myDmg || 0) / l.total) : 0;
-        const me = l.fromId === party.id;
+        const me = !party.joined || l.fromId === party.id;
+        const c = me ? null : memberColor(l.fromId);
         return `
       <div class="pb-line${me ? " me" : ""}">
-        <span class="pb-who">${esc(me ? "You" : l.from || "?")}</span>
-        <span class="pb-rank">${l.myRank ? "#" + l.myRank : "—"}</span>
-        <div class="track"><div class="fill" style="width:${Math.max(2, pct)}%"></div></div>
+        <span class="pb-who"${c ? ` style="color:${c}"` : ""}>${esc(me ? "You" : l.from || "?")}</span>
+        <span class="pb-rank"${c ? ` style="color:${c}"` : ""}>${l.myRank ? "#" + l.myRank : "—"}</span>
+        <div class="track"><div class="fill" style="width:${Math.max(2, pct)}%${c ? `;background:${c}` : ""}"></div></div>
         <span class="pb-nums">${fmt(l.myDmg || 0)}<span class="pct">${pct}%</span></span>
       </div>`; }).join("")}
     </div>`).join("");
   return `
-    <div class="bl-toggle${partyBossOpen ? " open" : ""}" onclick="togglePartyBoss()">
-      Party Bosses <span class="bl-count">${groups.length}</span><span class="chev">▾</span>
+    <div class="bl-toggle${bossLogOpen ? " open" : ""}" onclick="toggleBossLog()">
+      Recent Bosses <span class="bl-count">${groups.length}</span><span class="chev">▾</span>
     </div>
-    <div${partyBossOpen ? "" : " hidden"}>${cards}</div>`;
+    <div${bossLogOpen ? "" : " hidden"}>${cards}</div>`;
 }
-function togglePartyBoss() {
-  partyBossOpen = !partyBossOpen;
+function toggleBossLog() {
+  bossLogOpen = !bossLogOpen;
   renderBoss();
 }
 
@@ -618,13 +654,14 @@ function renderBoss() {
   const el = $("boss");
   if (!boss) {
     el.innerHTML = '<div class="empty">No boss kills recorded yet.</div>'
-      + partyBossHtml() + bossLogHtml();
+      + recentBossesHtml();
     return;
   }
   // rank/loadout arrived with newer builds; default them for old snapshots.
   const rows = boss.top.map((t, i) => ({ ...t, rank: t.rank || i + 1 }));
   const main = rows.filter(r => r.rank <= 5);
-  const mine = rows.filter(r => r.rank > 5); // our own below-top-5 row, if any
+  // Below-top-5 rows: us and/or party members, under a separator.
+  const mine = rows.filter(r => r.rank > 5);
   const max = Math.max(1, ...rows.map(t => t.dmg));
 
   const slots = t => {
@@ -634,24 +671,31 @@ function renderBoss() {
            onerror="this.parentElement.classList.add('empty');this.remove()"></span>`
       : '<span class="slot empty"></span>').join("");
   };
-  const card = t => `
-    <div class="p-card${t.me ? " me" : ""}" title="${t.dmg.toLocaleString()} damage">
+  const card = t => {
+    // A party member's card wears their color (border, bar, name chip);
+    // your own card keeps its gold "me" treatment.
+    const m = !t.me && party.joined ? memberByName(t.name) : null;
+    const c = m ? memberColor(m.id) : null;
+    return `
+    <div class="p-card${t.me ? " me" : ""}"${c ? ` style="border-color:${c}"` : ""} title="${t.dmg.toLocaleString()} damage">
       <div class="p-avatar">${t.icon > 0
-        ? `<img src="/icon/${t.icon}" alt=""
+        ? `<img src="/icon/${t.icon}" alt=""${c ? ` style="border-radius:6px;outline:1px solid ${c}"` : ""}
              onerror="this.insertAdjacentHTML('afterend','&lt;span class=&quot;blank&quot;&gt;&lt;/span&gt;');this.remove()">`
         : '<span class="blank"></span>'}</div>
       <div class="p-body">
         <div class="p-top">
           <span class="rank">#${t.rank}</span>
-          <span class="pname">${esc(t.name)}${t.me ? '<span class="you-chip">YOU</span>' : ""}</span>
+          <span class="pname">${esc(t.name)}${t.me ? '<span class="you-chip">YOU</span>' : ""}${
+            c ? `<span class="you-chip" style="background:${c}">PARTY</span>` : ""}</span>
           <span class="dval">${fmt(t.dmg)}<span class="pct">${
             Math.round(100 * t.dmg / boss.total)}%</span></span>
         </div>
         <div class="track"><div class="fill" style="width:${
-          Math.max(2, 100 * t.dmg / max)}%"></div></div>
+          Math.max(2, 100 * t.dmg / max)}%${c ? `;background:${c}` : ""}"></div></div>
         <div class="p-loadout">${slots(t)}</div>
       </div>
     </div>`;
+  };
 
   el.innerHTML = `
     <div class="boss-head">
@@ -665,7 +709,7 @@ function renderBoss() {
     </div>` +
     main.map(card).join("") +
     (mine.length ? '<div class="me-sep"></div>' + mine.map(card).join("") : "") +
-    partyBossHtml() + bossLogHtml();
+    recentBossesHtml();
 }
 
 function setMap(name) {
@@ -673,7 +717,28 @@ function setMap(name) {
 }
 
 // ---- Party UI ----
+function renderRoster() {
+  const card = $("rosterCard");
+  if (!party.joined || !party.members.length) {
+    card.hidden = true;
+    card.innerHTML = "";
+    return;
+  }
+  card.hidden = false;
+  card.innerHTML = '<h2>Party</h2><div class="roster">' + party.members.map(m => {
+    const me = m.id === party.id;
+    const c = me ? YOU_COLOR : memberColor(m.id);
+    return `<div class="pm-tile" style="border-color:${c}">
+      <span class="pm-ava">${m.icon > 0
+        ? `<img src="/icon/${m.icon}" alt="" onerror="this.remove()">` : ""}</span>
+      <span class="pm-name" style="color:${c}">${esc(m.name)}</span>
+      ${me ? '<span class="pm-you">YOU</span>' : ""}
+    </div>`;
+  }).join("") + "</div>";
+}
+
 function renderParty() {
+  renderRoster();
   const chip = $("partyChip");
   if (party.joined) {
     chip.className = "party-chip " + (party.connected ? "in" : "off");
@@ -757,7 +822,8 @@ function addPartyEvent(e) {
 function applyPartyFrame(f) {
   if (f.t === "members") {
     party.members = f.members || [];
-    renderParty();
+    // membership changes can reshuffle colors — repaint everything
+    renderParty(); renderLoot(); renderBoss();
   } else if (f.t === "history") {
     let any = false;
     for (const e of f.events || []) any = addPartyEvent(e) || any;
@@ -802,7 +868,7 @@ function connect() {
     party.joined = d.joined; party.connected = d.connected;
     party.code = d.code; party.name = d.name; party.id = d.id;
     party.members = d.members || party.members;
-    renderParty();
+    renderParty(); renderLoot(); renderBoss();
   });
   es.addEventListener("loot", e => {
     const d = JSON.parse(e.data);

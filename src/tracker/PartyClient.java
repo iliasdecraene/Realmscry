@@ -64,6 +64,13 @@ final class PartyClient implements WebSocket.Listener {
     private final StringBuilder partial = new StringBuilder();
     private volatile int backoffSec = 2;
 
+    // Own profile (avatar sprite + in-game name) shared with the party so
+    // rosters can show faces and leaderboards can be color-matched.
+    private volatile java.util.function.IntSupplier iconSrc = () -> 0;
+    private volatile java.util.function.Supplier<String> ignSrc = () -> "";
+    private volatile int sentIcon = -1;
+    private volatile String sentIgn = null;
+
     PartyClient(Listener listener) {
         this.listener = listener;
         Properties p = new Properties();
@@ -91,6 +98,12 @@ final class PartyClient implements WebSocket.Listener {
     String installId() { return installId; }
     boolean joined() { return joined; }
     boolean connected() { return connected; }
+
+    void setProfileSource(java.util.function.IntSupplier icon,
+                          java.util.function.Supplier<String> ign) {
+        iconSrc = icon;
+        ignSrc = ign;
+    }
 
     /** Rejoin the saved party on startup, silently. */
     void autoRejoin() {
@@ -193,10 +206,29 @@ final class PartyClient implements WebSocket.Listener {
     private void pingIfConnected() {
         WebSocket w = ws;
         if (w != null && connected) {
+            maybeSendProfile();
             try {
                 w.sendText("{\"t\":\"ping\"}", true);
             } catch (Throwable ignored) {
             }
+        }
+    }
+
+    /** Push our avatar/IGN when it becomes known or changes (skin swap, map join). */
+    private void maybeSendProfile() {
+        try {
+            int icon = iconSrc.getAsInt();
+            String ign = ignSrc.get();
+            if (ign == null) ign = "";
+            if (icon == sentIcon && ign.equals(sentIgn)) return;
+            JsonObject o = new JsonObject();
+            o.addProperty("t", "profile");
+            o.addProperty("icon", icon);
+            o.addProperty("ign", ign);
+            send(o);
+            sentIcon = icon;
+            sentIgn = ign;
+        } catch (Throwable ignored) {
         }
     }
 
@@ -224,9 +256,12 @@ final class PartyClient implements WebSocket.Listener {
         ws = webSocket;
         connected = true;
         backoffSec = 2;
+        sentIcon = -1; // fresh room connection: (re)send our profile
+        sentIgn = null;
         System.out.println("[Party] connected to " + code);
         listener.partyStatus();
         webSocket.request(1);
+        maybeSendProfile();
     }
 
     @Override

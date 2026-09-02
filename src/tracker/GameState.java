@@ -448,13 +448,17 @@ public class GameState {
         // its real rank so the UI can show it under a separator.
         List<Map.Entry<Integer, Attacker>> sorted = new ArrayList<>(e.dmg.entrySet());
         sorted.sort((x, y) -> Long.compare(y.getValue().dmg, x.getValue().dmg));
+        // Below the top 5, keep our own row AND any party member's row so
+        // the UI can list everyone under the separator with real ranks.
+        java.util.Set<String> pNames = partyNames.get();
         List<Object[]> top = new ArrayList<>();
         int rank = 0;
         for (Map.Entry<Integer, Attacker> en : sorted) {
             rank++;
             boolean isMe = en.getKey() == myId;
-            if (rank > 5 && !isMe) continue;
             Attacker a = en.getValue();
+            boolean isParty = !isMe && a.name != null && pNames.contains(a.name);
+            if (rank > 5 && !isMe && !isParty) continue;
             // Mid-map ghost self: name/skin were never on the wire, but we
             // know who we are and what we fired.
             String pname = a.name != null ? a.name : (isMe ? "You" : "Player#" + en.getKey());
@@ -464,7 +468,6 @@ public class GameState {
                 if (loadout[0] == 0) loadout[0] = myWeapon;
             }
             top.add(new Object[]{pname, a.dmg, isMe, a.icon, rank, loadout});
-            if (rank > 5) break; // that was our below-top-5 row; done
         }
         long fightMs = Math.max(0, e.lastHitMs - e.firstHitMs);
         cBossKills++;
@@ -630,6 +633,31 @@ public class GameState {
 
     public synchronized String mapName() {
         return mapName;
+    }
+
+    /** Own avatar sprite id (skin, else class), 0 while unknown. For party profiles. */
+    public synchronized int myIcon() {
+        Ent p = players.get(myId);
+        if (p == null) return 0;
+        int skin = p.stat(StatType.SKIN_ID);
+        if (skin > 0) return skin;
+        return p.objectType > 0 ? p.objectType : 0;
+    }
+
+    /** Own in-game name, "" while unknown (mid-map ghost self). For party profiles. */
+    public synchronized String myIgn() {
+        Ent p = players.get(myId);
+        String n = p == null ? null : p.name();
+        return n == null ? "" : n;
+    }
+
+    // In-game names of current party members; their leaderboard rows are
+    // kept below the top 5 just like our own. Supplied by WebServer.
+    private volatile java.util.function.Supplier<java.util.Set<String>> partyNames =
+            java.util.Collections::emptySet;
+
+    public void setPartyNames(java.util.function.Supplier<java.util.Set<String>> s) {
+        if (s != null) partyNames = s;
     }
 
     // ------------------------------------------------------------------
