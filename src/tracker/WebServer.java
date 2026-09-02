@@ -39,6 +39,11 @@ public class WebServer implements GameState.Publisher {
     private static final Path LOOT_HISTORY = Paths.get("loot-history.jsonl");
     private static final int LOOT_CAP = 2000;
     private final ArrayDeque<JsonObject> lootLog = new ArrayDeque<>();
+    // Personal boss history: compact {boss, myDmg, myRank, total} entries,
+    // persisted like loot, but the UI only ever shows the newest BOSS_SHOWN.
+    private static final Path BOSS_HISTORY = Paths.get("boss-history.jsonl");
+    private static final int BOSS_CAP = 100, BOSS_SHOWN = 5;
+    private final ArrayDeque<JsonObject> bossLog = new ArrayDeque<>();
     private JsonObject lastBoss = null;
     private String mapName = "";
 
@@ -46,6 +51,7 @@ public class WebServer implements GameState.Publisher {
         String dir = System.getProperty("tracker.web", "web");
         webDir = Paths.get(dir);
         loadLootHistory();
+        loadBossHistory();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", PORT), 0);
         server.createContext("/", this::servePage);
         server.createContext("/events", this::serveEvents);
@@ -185,6 +191,7 @@ public class WebServer implements GameState.Publisher {
         }
         snap.add("loot", loot);
         if (lastBoss != null) snap.add("boss", lastBoss);
+        snap.add("bossLog", bossLogJson());
         sendTo(os, "snapshot", snap.toString());
     }
 
@@ -243,7 +250,7 @@ public class WebServer implements GameState.Publisher {
             lootLog.addFirst(o);
             while (lootLog.size() > LOOT_CAP) lootLog.removeLast();
         }
-        appendLootHistory(o);
+        appendHistory(LOOT_HISTORY, o);
         broadcast("loot", o.toString());
         System.out.println("[Loot] " + tier + (boosted ? " (boosted)" : "")
                 + (anyShiny ? " SHINY" : "") + " bag: " + GSON.toJson(items));
@@ -268,14 +275,14 @@ public class WebServer implements GameState.Publisher {
         }
     }
 
-    private void appendLootHistory(JsonObject o) {
+    private void appendHistory(Path file, JsonObject o) {
         try {
-            Files.writeString(LOOT_HISTORY, o.toString() + System.lineSeparator(),
+            Files.writeString(file, o.toString() + System.lineSeparator(),
                     StandardCharsets.UTF_8,
                     java.nio.file.StandardOpenOption.CREATE,
                     java.nio.file.StandardOpenOption.APPEND);
         } catch (Exception e) {
-            System.err.println("[Web] Could not append loot history: " + e);
+            System.err.println("[Web] Could not append " + file + ": " + e);
         }
     }
 
@@ -309,7 +316,91 @@ public class WebServer implements GameState.Publisher {
         o.add("top", arr);
         lastBoss = o;
         broadcast("boss", o.toString());
+        recordBossKill(bossName, bossType, totalDmg, top, ts);
         System.out.println("[Boss] " + bossName + " killed, total " + totalDmg);
+    }
+
+    /**
+     * Appends the user's own line for this kill to the personal boss history.
+     * A phase despawn can publish the same fight before the confirmed kill
+     * does, so a same-boss entry within 90s is replaced, not duplicated.
+     */
+    private void recordBossKill(String bossName, int bossType, long totalDmg,
+                                List<Object[]> top, long ts) {
+        long myDmg = 0;
+        int myRank = 0;
+        for (Object[] t : top) {
+            if ((Boolean) t[2]) { // my row is always included when I dealt damage
+                myDmg = (Long) t[1];
+                myRank = (Integer) t[4];
+                break;
+            }
+        }
+        JsonObject e = new JsonObject();
+        e.addProperty("name", bossName);
+        e.addProperty("icon", bossType);
+        e.addProperty("total", totalDmg);
+        e.addProperty("myDmg", myDmg);
+        if (myRank > 0) e.addProperty("myRank", myRank);
+        e.addProperty("ts", ts);
+        boolean replaced = false;
+        synchronized (bossLog) {
+            JsonObject newest = bossLog.peekFirst();
+            if (newest != null && newest.get("icon").getAsInt() == bossType
+                    && ts - newest.get("ts").getAsLong() < 90_000) {
+                bossLog.removeFirst();
+                replaced = true;
+            }
+            bossLog.addFirst(e);
+            while (bossLog.size() > BOSS_CAP) bossLog.removeLast();
+        }
+        if (replaced) rewriteBossHistory();
+        else appendHistory(BOSS_HISTORY, e);
+        broadcast("bosslog", bossLogJson().toString());
+    }
+
+    private JsonArray bossLogJson() {
+        JsonArray arr = new JsonArray();
+        synchronized (bossLog) {
+            int n = 0;
+            for (JsonObject e : bossLog) {
+                if (n++ >= BOSS_SHOWN) break;
+                arr.add(e);
+            }
+        }
+        return arr;
+    }
+
+    private void loadBossHistory() {
+        try {
+            if (!Files.exists(BOSS_HISTORY)) return;
+            for (String line : Files.readAllLines(BOSS_HISTORY, StandardCharsets.UTF_8)) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+                try {
+                    bossLog.addFirst(GSON.fromJson(line, JsonObject.class));
+                } catch (Exception ignored) {
+                }
+            }
+            while (bossLog.size() > BOSS_CAP) bossLog.removeLast();
+            System.out.println("[Web] Loaded " + bossLog.size() + " boss entries from " + BOSS_HISTORY);
+        } catch (Exception e) {
+            System.err.println("[Web] Could not load boss history: " + e);
+        }
+    }
+
+    /** Full rewrite (oldest first) — only used for the rare phase-dedupe. */
+    private void rewriteBossHistory() {
+        try {
+            StringBuilder sb = new StringBuilder();
+            synchronized (bossLog) {
+                var it = bossLog.descendingIterator();
+                while (it.hasNext()) sb.append(it.next().toString()).append(System.lineSeparator());
+            }
+            Files.writeString(BOSS_HISTORY, sb.toString(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            System.err.println("[Web] Could not rewrite boss history: " + e);
+        }
     }
 
     @Override

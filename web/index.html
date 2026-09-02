@@ -278,6 +278,48 @@
   .slot img { width: 20px; height: 20px; image-rendering: pixelated; }
   .slot.empty { opacity: .4; }
   .me-sep { border-top: 1px dashed var(--border); margin: 14px 2px 6px; }
+
+  /* ---- Your recent bosses (collapsible personal history) ---- */
+  .bl-toggle {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 18px; padding: 8px 2px 2px;
+    border-top: 1px solid var(--border);
+    font-size: 12px; font-weight: 600; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--text-muted);
+    cursor: pointer; user-select: none;
+  }
+  .bl-toggle:hover { color: var(--text-secondary); }
+  .bl-toggle .chev { transition: transform .15s ease; font-size: 10px; }
+  .bl-toggle.open .chev { transform: rotate(180deg); }
+  .bl-toggle .bl-count { margin-left: auto; font-weight: 500; letter-spacing: 0; }
+  .bl-row {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-top: 7px;
+  }
+  .bl-row .bl-icon {
+    flex: none; width: 34px; height: 34px; image-rendering: pixelated;
+  }
+  .bl-row .blank34 {
+    flex: none; width: 34px; height: 34px; border-radius: 6px;
+    background: var(--surface-1); border: 1px dashed var(--border);
+  }
+  .bl-body { flex: 1; min-width: 0; }
+  .bl-topline { display: flex; align-items: baseline; gap: 8px; }
+  .bl-name {
+    flex: 1; min-width: 0; font-weight: 550; font-size: 13px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .rank-chip {
+    flex: none; font-size: 11px; font-weight: 700;
+    color: var(--you); font-variant-numeric: tabular-nums;
+  }
+  .bl-row .track { margin: 6px 0 0; }
+  .bl-row .fill { background: var(--you); }
+  .bl-ago { color: var(--text-muted); font-size: 11px; flex: none; }
 </style>
 </head>
 <body>
@@ -306,6 +348,8 @@
 const $ = id => document.getElementById(id);
 let lootLog = [];
 let boss = null;
+let bossLog = [];          // your own line for the 5 most recent kills
+let bossLogOpen = false;   // dropdown state survives re-renders
 
 const fmt = n => {
   if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
@@ -395,10 +439,42 @@ function showShinyToast(l) {
   toastTimer = setTimeout(() => t.classList.remove("show"), 5000);
 }
 
+// Your line in the 5 most recent kills, tucked under a dropdown.
+function bossLogHtml() {
+  if (!bossLog.length) return "";
+  const rows = bossLog.map(b => {
+    const pct = b.total > 0 ? Math.round(100 * b.myDmg / b.total) : 0;
+    return `
+    <div class="bl-row" title="${(b.myDmg || 0).toLocaleString()} damage">
+      ${b.icon > 0 ? `<img class="bl-icon" src="/icon/${b.icon}" alt=""
+        onerror="this.insertAdjacentHTML('afterend','&lt;span class=&quot;blank34&quot;&gt;&lt;/span&gt;');this.remove()">`
+        : '<span class="blank34"></span>'}
+      <div class="bl-body">
+        <div class="bl-topline">
+          <span class="bl-name">${esc(b.name)}</span>
+          <span class="rank-chip">${b.myRank ? "#" + b.myRank : "—"}</span>
+          <span class="dval">${fmt(b.myDmg || 0)}<span class="pct">${pct}%</span></span>
+          <span class="bl-ago">${ago(b.ts)}</span>
+        </div>
+        <div class="track"><div class="fill" style="width:${Math.max(2, pct)}%"></div></div>
+      </div>
+    </div>`;
+  }).join("");
+  return `
+    <div class="bl-toggle${bossLogOpen ? " open" : ""}" onclick="toggleBossLog()">
+      Your Recent Bosses <span class="bl-count">${bossLog.length}</span><span class="chev">▾</span>
+    </div>
+    <div class="bl-list"${bossLogOpen ? "" : " hidden"}>${rows}</div>`;
+}
+function toggleBossLog() {
+  bossLogOpen = !bossLogOpen;
+  renderBoss();
+}
+
 function renderBoss() {
   const el = $("boss");
   if (!boss) {
-    el.innerHTML = '<div class="empty">No boss kills recorded yet.</div>';
+    el.innerHTML = '<div class="empty">No boss kills recorded yet.</div>' + bossLogHtml();
     return;
   }
   // rank/loadout arrived with newer builds; default them for old snapshots.
@@ -444,7 +520,8 @@ function renderBoss() {
       </div>
     </div>` +
     main.map(card).join("") +
-    (mine.length ? '<div class="me-sep"></div>' + mine.map(card).join("") : "");
+    (mine.length ? '<div class="me-sep"></div>' + mine.map(card).join("") : "") +
+    bossLogHtml();
 }
 
 function setMap(name) {
@@ -465,8 +542,13 @@ function connect() {
     const d = JSON.parse(e.data);
     lootLog = d.loot || [];
     boss = d.boss || null;
+    bossLog = d.bossLog || [];
     setMap(d.map);
     renderLoot(); renderBoss();
+  });
+  es.addEventListener("bosslog", e => {
+    bossLog = JSON.parse(e.data);
+    renderBoss();
   });
   es.addEventListener("loot", e => {
     const d = JSON.parse(e.data);
@@ -483,7 +565,7 @@ function connect() {
   es.addEventListener("map", e => setMap(JSON.parse(e.data).map));
 }
 connect();
-setInterval(() => { renderLoot(); if (boss) renderBoss(); }, 30000);
+setInterval(() => { renderLoot(); if (boss || bossLog.length) renderBoss(); }, 30000);
 </script>
 </body>
 </html>
