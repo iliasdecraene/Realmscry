@@ -1412,6 +1412,12 @@ function startOvlResize(ev, key, box, meta) {
   window.addEventListener("pointerup", up);
 }
 window.addEventListener("resize", () => { if (view === "overlay") renderOvlScene(); });
+// While the Overlay tab is open, keep the in-game overlay visible (preview
+// mode) even though the browser has focus — otherwise you can't see where
+// you're placing the boxes.
+setInterval(() => {
+  if (view === "overlay") api("/overlay/preview", {}).catch(() => {});
+}, 4000);
 
 async function loadSettings() {
   try {

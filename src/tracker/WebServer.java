@@ -762,7 +762,12 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
             rsp.addProperty("ok", false);
             rsp.addProperty("error", "overlay not available");
         } else if ("/overlay/status".equals(path)) {
+            o.notePreview(); // opening the tab counts as configuring
             rsp = o.configJson();
+        } else if ("/overlay/preview".equals(path)) {
+            o.notePreview();
+            rsp = new JsonObject();
+            rsp.addProperty("ok", true);
         } else if ("/overlay/config".equals(path)) {
             try {
                 JsonObject body = com.google.gson.JsonParser

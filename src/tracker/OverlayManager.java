@@ -94,6 +94,7 @@ final class OverlayManager {
     private volatile JFrame frame;
     private volatile boolean clickThroughApplied;
     private volatile Rectangle lastBounds;
+    private volatile long previewUntil; // Overlay tab open: show despite focus
 
     OverlayManager(WebServer web, GuildClient guild) {
         this.web = web;
@@ -131,7 +132,19 @@ final class OverlayManager {
         readBox(cfg, "guild", guildBox);
         readBox(cfg, "boss", boss);
         save();
+        notePreview(); // the user is placing boxes right now — show them
+        exec.execute(this::tick);
         refresh();
+    }
+
+    /**
+     * The Overlay tab pings this while it's open: the overlay then shows
+     * over the (unfocused) game so boxes can be placed while the browser
+     * has focus. Expires by itself shortly after the tab closes.
+     */
+    void notePreview() {
+        previewUntil = System.currentTimeMillis() + 10_000;
+        if (guildBox.on && latestGuildEvent == null) exec.execute(this::pollGuild);
     }
 
     private static void readBox(JsonObject cfg, String key, Box b) {
@@ -228,9 +241,12 @@ final class OverlayManager {
     /** Logical (Swing) bounds to cover: game window, or screen in debug mode. */
     private Rectangle targetBounds() {
         Pointer game = findGame();
-        // Only overlay the game while it has focus — alt-tabbing away
-        // hides the boxes within a tick instead of floating over everything.
-        if (game != null && !debugAnchor && !isForeground(game)) game = null;
+        // Only overlay the game while it has focus — alt-tabbing away hides
+        // the boxes instead of floating over everything. Exception: while
+        // the Overlay tab is being used (preview), keep showing so the user
+        // sees where the boxes land.
+        boolean preview = System.currentTimeMillis() < previewUntil;
+        if (game != null && !debugAnchor && !preview && !isForeground(game)) game = null;
         if (game != null) {
             int[] r = new int[4];
             if (U32.I.GetWindowRect(game, r)) {
@@ -611,9 +627,9 @@ final class OverlayManager {
 
     private void pollGuild() {
         try {
+            // No visibility gate: with focus-hiding the frame is hidden most
+            // of the time, and the box must be fresh the moment it shows.
             if (!guildBox.on || guild == null || !guild.inGuild()) return;
-            JFrame f = frame;
-            if (f == null || !f.isVisible()) return;
             JsonObject r = guild.timeline("all", 0);
             if (r.has("ok") && r.get("ok").getAsBoolean()) {
                 JsonArray evs = r.getAsJsonArray("events");
