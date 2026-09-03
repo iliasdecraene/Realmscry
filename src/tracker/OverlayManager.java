@@ -467,8 +467,11 @@ final class OverlayManager {
         boolean shiny = data.has("shiny");
         if (death) bg(g, GD_H, DEATH_BG, DEATH_BORDER);
         else if (shiny) bg(g, GD_H, SURFACE, CYAN);
-        // avatar panel
-        int icon = ev.has("icon") ? ev.get("icon").getAsInt() : 0;
+        // avatar panel: the character stamped into the event wins over the
+        // member's current profile character
+        int icon = data.has("charIcon") ? data.get("charIcon").getAsInt()
+                : death && data.has("icon") ? data.get("icon").getAsInt()
+                : ev.has("icon") ? ev.get("icon").getAsInt() : 0;
         g.setColor(SURFACE2);
         g.fillRoundRect(8, 8, GD_H - 16, GD_H - 16, 8, 8);
         drawIcon(g, icon, 12, 12, GD_H - 24);

@@ -256,6 +256,15 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         o.addProperty("bagType", bagType);
         o.addProperty("ts", ts);
         o.addProperty("map", mapName);
+        // Stamp the character that got the drop (like deaths already do), so
+        // guild rows keep crediting it after the player switches characters.
+        GameState s = state;
+        if (s != null) {
+            int ci = s.myIcon();
+            if (ci > 0) o.addProperty("charIcon", ci);
+            int ct = s.myClassType();
+            if (ct > 0) o.addProperty("charClass", Names.item(ct));
+        }
         boolean anyShiny = false;
         JsonArray arr = new JsonArray();
         for (int[] it : items) {

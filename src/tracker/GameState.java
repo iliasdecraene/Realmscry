@@ -760,6 +760,12 @@ public class GameState {
         return p.objectType > 0 ? p.objectType : 0;
     }
 
+    /** Own class objectType, 0 while unknown. For stamping events. */
+    public synchronized int myClassType() {
+        Ent p = players.get(myId);
+        return p != null && p.objectType > 0 ? p.objectType : 0;
+    }
+
     /** Own in-game name, "" while unknown (mid-map ghost self). For party profiles. */
     public synchronized String myIgn() {
         Ent p = players.get(myId);

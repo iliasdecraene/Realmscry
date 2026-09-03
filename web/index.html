@@ -1540,10 +1540,13 @@ function guildEventHtml(e) {
   const d = { ...e.data, ts: e.data.ts || e.ts };
   delete d.from; delete d.fromId; // no party colors inside the guild view
   const body = e.type === "death" ? deathRow(d, true) : lootRow(d, true);
+  // The character stamped into the event (who actually got the drop /
+  // died) beats the member's current profile character.
+  const ava = d.charIcon || (e.type === "death" && d.icon) || e.icon || 0;
   return `
     <div class="g-ev">
-      <div class="g-ev-ava">${e.icon > 0
-        ? `<img src="/icon/${e.icon}" alt="" onerror="this.remove()">` : ""}</div>
+      <div class="g-ev-ava"${d.charClass ? ` title="${esc(d.charClass)}"` : ""}>${ava > 0
+        ? `<img src="/icon/${ava}" alt="" onerror="this.remove()">` : ""}</div>
       <div class="g-ev-body">
         <div class="g-ev-head">
           <span class="gname">${esc(e.dname || e.ign || "Unknown")}${e.mine ? " (you)" : ""}</span>
