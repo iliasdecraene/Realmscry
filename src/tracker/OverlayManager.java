@@ -53,7 +53,7 @@ final class OverlayManager {
 
     // Design space: every box is painted 330 units wide, then scaled.
     static final int UNIT_W = 330;
-    static final int TL_H = 62, GD_H = 74, BOSS_H = 118;
+    static final int TL_H = 62, GD_H = 74, BOSS_H = 74;
     private static final double DEF_W = 330.0 / 1600, MIN_W = 0.08, MAX_W = 0.6;
     private static final Path CONFIG = Paths.get("overlay.properties");
     private static final String WINDOW_TITLE = "Realmscry Overlay";
@@ -541,37 +541,73 @@ final class OverlayManager {
         g.drawString(trim(g, str(data, "tier", "").toUpperCase() + (str(data, "map", "").isEmpty() ? "" : " · " + str(data, "map", "")), UNIT_W - x0 - 12), x0, GD_H - 12);
     }
 
+    /**
+     * Boss box, tracker "Recent Bosses" style: boss portrait hard left,
+     * boss name on top, then ONLY the player's own line — rank, gold
+     * share bar, damage + percent. No other players.
+     */
     private void paintBossContent(Graphics2D g) {
         bg(g, BOSS_H, SURFACE, BORDER);
         JsonObject b = web.lastBossJson();
-        g.setFont(CHIP);
-        g.setColor(MUTED);
-        g.drawString("LAST BOSS", 10, 18);
         if (b == null) {
+            g.setFont(CHIP);
+            g.setColor(MUTED);
+            g.drawString("LAST BOSS", 10, 18);
             g.setFont(SUB);
             g.drawString("no boss kills yet", 12, 44);
             return;
         }
-        int cx = drawIcon(g, b.has("icon") ? b.get("icon").getAsInt() : 0, 10, 24, 24);
+        // boss portrait panel (like the guild box's avatar)
+        g.setColor(SURFACE2);
+        g.fillRoundRect(8, 8, BOSS_H - 16, BOSS_H - 16, 8, 8);
+        drawIcon(g, b.has("icon") ? b.get("icon").getAsInt() : 0, 12, 12, BOSS_H - 24);
+        int x0 = BOSS_H + 2;
         g.setFont(MAIN);
         g.setColor(TEXT);
-        g.drawString(trim(g, str(b, "name", "?"), UNIT_W - cx - 16), cx + 6, 41);
+        String agoS = ago(b);
+        int agoW = 0;
+        g.drawString(trim(g, str(b, "name", "?"), UNIT_W - x0 - 70), x0, 24);
+        g.setFont(SUB);
+        g.setColor(MUTED);
+        agoW = g.getFontMetrics().stringWidth(agoS);
+        g.drawString(agoS, UNIT_W - 12 - agoW, 24);
+        // my row
+        JsonObject me = null;
         JsonArray top = b.has("top") ? b.getAsJsonArray("top") : new JsonArray();
-        int line = 0, yy = 62;
-        for (int i = 0; i < top.size() && line < 4; i++) {
-            JsonObject t = top.get(i).getAsJsonObject();
-            boolean me = t.has("me") && t.get("me").getAsBoolean();
-            if (line == 3 && !me) continue; // keep the last line for our row
-            int rank = t.has("rank") ? t.get("rank").getAsInt() : i + 1;
+        for (var el : top) {
+            JsonObject t = el.getAsJsonObject();
+            if (t.has("me") && t.get("me").getAsBoolean()) {
+                me = t;
+                break;
+            }
+        }
+        if (me == null) {
             g.setFont(SUB);
             g.setColor(MUTED);
-            g.drawString("#" + rank, 12, yy);
-            g.setColor(me ? GOLD : SECONDARY);
-            g.drawString(trim(g, str(t, "name", "?"), 190), 40, yy);
-            String dmg = fmt(t.has("dmg") ? t.get("dmg").getAsLong() : 0);
-            g.drawString(dmg, UNIT_W - 12 - g.getFontMetrics().stringWidth(dmg), yy);
-            yy += 15;
-            line++;
+            g.drawString("no damage dealt", x0, 50);
+            return;
+        }
+        long dmg = me.has("dmg") ? me.get("dmg").getAsLong() : 0;
+        long total = Math.max(1, b.has("total") ? b.get("total").getAsLong() : 1);
+        int pct = (int) Math.round(100.0 * dmg / total);
+        g.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        g.setColor(GOLD);
+        String rank = "#" + (me.has("rank") ? me.get("rank").getAsInt() : 0);
+        g.drawString(rank, x0, 52);
+        int rankW = g.getFontMetrics().stringWidth(rank);
+        // damage + percent on the right
+        g.setFont(SUB);
+        String dtxt = fmt(dmg) + "  " + pct + "%";
+        int dw = g.getFontMetrics().stringWidth(dtxt);
+        g.setColor(SECONDARY);
+        g.drawString(dtxt, UNIT_W - 12 - dw, 52);
+        // gold share bar between rank and numbers
+        int bx = x0 + rankW + 8, bw = UNIT_W - 12 - dw - 10 - bx;
+        if (bw > 20) {
+            g.setColor(SURFACE2);
+            g.fillRoundRect(bx, 45, bw, 7, 4, 4);
+            g.setColor(GOLD);
+            g.fillRoundRect(bx, 45, Math.max(4, bw * pct / 100), 7, 4, 4);
         }
     }
 

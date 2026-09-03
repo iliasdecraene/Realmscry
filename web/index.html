@@ -737,7 +737,7 @@
         <label class="setting-row"><input type="checkbox" id="ovlGuild" onchange="ovlToggle()">
           <span><b>Guild timeline</b><br><span class="g-hint" style="margin-top:2px">The guild's latest event, with who got it.</span></span></label>
         <label class="setting-row"><input type="checkbox" id="ovlBoss" onchange="ovlToggle()">
-          <span><b>Boss damage</b><br><span class="g-hint" style="margin-top:2px">Last boss kill: top 3 + your rank.</span></span></label>
+          <span><b>Boss damage</b><br><span class="g-hint" style="margin-top:2px">Your rank &amp; damage on the last boss kill.</span></span></label>
       </div>
       <div class="g-hint" style="margin-top:12px">Drag a box to place it; drag its
         corner handle to resize (aspect stays fixed). The overlay mirrors this
@@ -1299,10 +1299,18 @@ const OVL_BOXES = {
       <div class="ob-main" style="font-size:12px">Shiny Spider Silk Bow</div>
       <div class="ob-sub">WHITE · Sprite World</div>
     </div></div>` },
-  boss: { h: 118, html: `
-    <span class="ob-sub" style="font-weight:700;letter-spacing:.06em">LAST BOSS</span>
-    <div class="ob-main">Septavius the Ghost God</div>
-    <div class="ob-rows">#1 Alpha · 120k<br>#2 Gamma · 80k<br><span class="me">#4 You · 70k</span></div>` },
+  boss: { h: 74, html: `
+    <div class="ob-guild"><div class="ob-ava">👹</div><div style="min-width:0;flex:1">
+      <div class="ob-main" style="margin-top:0">Septavius the Ghost God
+        <span class="ob-sub">· 1m ago</span></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:7px">
+        <span style="color:var(--you);font-weight:700;font-size:12px">#4</span>
+        <span style="flex:1;height:7px;border-radius:4px;background:#232322;overflow:hidden"><span
+          style="display:block;height:100%;width:34%;background:var(--you)"></span></span>
+        <span class="ob-sub" style="color:var(--text-secondary)">70.0k
+          <span style="color:var(--text-muted)">7%</span></span>
+      </div>
+    </div></div>` },
 };
 
 async function loadOverlay() {
