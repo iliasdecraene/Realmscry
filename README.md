@@ -32,6 +32,11 @@
   6-letter code with friends (they need Realmscry too). You'll see each
   other's drops live in the loot feed, and a per-boss damage comparison of
   everyone's runs. The party survives restarts until you leave it.
+- **In-game overlay** — the Overlay tab lets you place semi-transparent,
+  click-through boxes over the game itself: your latest drop or death,
+  the guild's latest event, and the last boss's damage ranking. Drag them
+  where you want on a preview of the game screen; they follow the game
+  window and vanish when it closes (windowed / borderless modes).
 - **Self-updating** — checks this repo's releases at launch and updates
   itself. Install once, get every new feature automatically.
 
