@@ -138,12 +138,13 @@ final class OverlayManager {
     }
 
     /**
-     * The Overlay tab pings this while it's open: the overlay then shows
-     * over the (unfocused) game so boxes can be placed while the browser
-     * has focus. Expires by itself shortly after the tab closes.
+     * Called on every config change (checkbox tick, drag, resize): the
+     * overlay shows over the unfocused game for 5 s so the user sees where
+     * the boxes land — and then hides again, teaching that it only lives
+     * on the focused game. Dragging keeps re-arming it.
      */
     void notePreview() {
-        previewUntil = System.currentTimeMillis() + 10_000;
+        previewUntil = System.currentTimeMillis() + 5_000;
         if (guildBox.on && latestGuildEvent == null) exec.execute(this::pollGuild);
     }
 

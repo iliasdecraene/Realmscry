@@ -739,10 +739,12 @@
         <label class="setting-row"><input type="checkbox" id="ovlBoss" onchange="ovlToggle()">
           <span><b>Boss damage</b><br><span class="g-hint" style="margin-top:2px">Your rank &amp; damage on the last boss kill.</span></span></label>
       </div>
-      <div class="g-hint" style="margin-top:12px">Drag a box to place it; drag its
-        corner handle to resize (aspect stays fixed). The overlay mirrors this
-        exactly over the game while it's running (windowed / borderless), and
-        is click-through. <span id="ovlGame"></span></div>
+      <div class="g-hint" style="margin-top:12px"><b style="color:var(--text-secondary)">Fullscreen
+        recommended.</b> Drag a box to place it; drag its corner handle to
+        resize (aspect stays fixed). While you're placing boxes the overlay
+        shows over the game; in normal play it only appears while the game
+        is the focused window, and it's click-through.
+        <span id="ovlGame"></span></div>
     </section>
     <section class="card ovl-main">
       <h2>Preview</h2>
@@ -1333,7 +1335,8 @@ function ovlToggle() {
   ovl.guild.on = $("ovlGuild").checked;
   ovl.boss.on = $("ovlBoss").checked;
   renderOvlScene();
-  saveOvl();
+  // immediate: ticking a box should pop the overlay up right away
+  api("/overlay/config", ovl).catch(() => {});
 }
 let ovlSaveTimer = null;
 function saveOvl() {
@@ -1341,6 +1344,16 @@ function saveOvl() {
   ovlSaveTimer = setTimeout(async () => {
     try { await api("/overlay/config", ovl); } catch (e) {}
   }, 350);
+}
+// While dragging/resizing, push the config live (throttled) so the real
+// overlay follows the mouse AND stays visible; 5 s after the last push
+// the jar hides it again (unless the game is focused).
+let ovlLiveLast = 0;
+function ovlLivePush() {
+  const now = Date.now();
+  if (now - ovlLiveLast < 250) return;
+  ovlLiveLast = now;
+  api("/overlay/config", ovl).catch(() => {});
 }
 function renderOvlScene() {
   const scene = $("ovlScene");
@@ -1385,6 +1398,7 @@ function startOvlDrag(ev, key, box) {
     box.style.top = y + "px";
     ovl[key].x = x / sr.width;
     ovl[key].y = y / sr.height;
+    ovlLivePush();
   };
   const up = () => {
     window.removeEventListener("pointermove", move);
@@ -1410,6 +1424,7 @@ function startOvlResize(ev, key, box, meta) {
     const inner = box.querySelector(".ob-inner");
     if (inner) inner.style.transform = `scale(${scale})`;
     ovl[key].w = pw / sr.width;
+    ovlLivePush();
   };
   const up = () => {
     window.removeEventListener("pointermove", move);
@@ -1420,12 +1435,6 @@ function startOvlResize(ev, key, box, meta) {
   window.addEventListener("pointerup", up);
 }
 window.addEventListener("resize", () => { if (view === "overlay") renderOvlScene(); });
-// While the Overlay tab is open, keep the in-game overlay visible (preview
-// mode) even though the browser has focus — otherwise you can't see where
-// you're placing the boxes.
-setInterval(() => {
-  if (view === "overlay") api("/overlay/preview", {}).catch(() => {});
-}, 4000);
 
 async function loadSettings() {
   try {
