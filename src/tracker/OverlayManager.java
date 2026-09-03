@@ -64,6 +64,7 @@ final class OverlayManager {
         Pointer FindWindowW(WString cls, WString title);
         boolean GetWindowRect(Pointer hwnd, int[] rect);
         boolean IsIconic(Pointer hwnd);
+        Pointer GetForegroundWindow();
         int GetWindowLongW(Pointer hwnd, int index);
         int SetWindowLongW(Pointer hwnd, int index, int value);
     }
@@ -98,7 +99,7 @@ final class OverlayManager {
         this.web = web;
         this.guild = guild;
         load();
-        exec.scheduleAtFixedRate(this::tick, 2, 2, TimeUnit.SECONDS);
+        exec.scheduleAtFixedRate(this::tick, 2, 1, TimeUnit.SECONDS);
         exec.scheduleAtFixedRate(this::pollGuild, 5, 30, TimeUnit.SECONDS);
     }
 
@@ -214,9 +215,22 @@ final class OverlayManager {
         }
     }
 
+    /** True when the game is the window the user is actually looking at. */
+    private static boolean isForeground(Pointer game) {
+        try {
+            Pointer fg = U32.I.GetForegroundWindow();
+            return fg != null && Pointer.nativeValue(fg) == Pointer.nativeValue(game);
+        } catch (Throwable t) {
+            return true; // if the check breaks, prefer showing the overlay
+        }
+    }
+
     /** Logical (Swing) bounds to cover: game window, or screen in debug mode. */
     private Rectangle targetBounds() {
         Pointer game = findGame();
+        // Only overlay the game while it has focus — alt-tabbing away
+        // hides the boxes within a tick instead of floating over everything.
+        if (game != null && !debugAnchor && !isForeground(game)) game = null;
         if (game != null) {
             int[] r = new int[4];
             if (U32.I.GetWindowRect(game, r)) {
