@@ -22,3 +22,4 @@ References/
 memory/
 node_modules/
 party-worker/.wrangler/
+overlay.properties

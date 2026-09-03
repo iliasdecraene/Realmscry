@@ -72,6 +72,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         server.createContext("/account/", this::serveAccount);
         server.createContext("/timeline/like", this::serveTimelineLike);
         server.createContext("/settings/", this::serveSettings);
+        server.createContext("/overlay/", this::serveOverlay);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
 
@@ -276,6 +277,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         }
         appendHistory(LOOT_HISTORY, o);
         broadcast("loot", o.toString());
+        if (overlay != null) overlay.refresh();
         PartyClient p = party;
         if (p != null && p.joined()) {
             JsonObject share = o.deepCopy();
@@ -348,6 +350,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         o.add("top", arr);
         lastBoss = o;
         broadcast("boss", o.toString());
+        if (overlay != null) overlay.refresh();
         recordBossKill(bossName, bossType, totalDmg, top, ts);
         System.out.println("[Boss] " + bossName + " killed, total " + totalDmg);
     }
@@ -665,6 +668,66 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         try (OutputStream os = ex.getResponseBody()) { os.write(out); }
     }
 
+    // ------------------------------------------------------------------
+    // Overlay
+    // ------------------------------------------------------------------
+
+    private volatile OverlayManager overlay;
+
+    public void setOverlay(OverlayManager o) {
+        this.overlay = o;
+    }
+
+    /** Newest own timeline entry (loot or death) for the overlay. */
+    public JsonObject latestTimelineEntry() {
+        synchronized (lootLog) {
+            return lootLog.peekFirst();
+        }
+    }
+
+    /** Last published boss kill for the overlay. */
+    public JsonObject lastBossJson() {
+        return lastBoss;
+    }
+
+    /** Cached sprite PNG bytes for the overlay renderer (empty = unknown id). */
+    public byte[] iconPng(int id) {
+        return id > 0 ? iconCache.computeIfAbsent(id, this::renderIcon) : NO_ICON;
+    }
+
+    private void serveOverlay(HttpExchange ex) throws IOException {
+        OverlayManager o = overlay;
+        JsonObject rsp;
+        String path = ex.getRequestURI().getPath();
+        if (o == null) {
+            rsp = new JsonObject();
+            rsp.addProperty("ok", false);
+            rsp.addProperty("error", "overlay not available");
+        } else if ("/overlay/status".equals(path)) {
+            rsp = o.configJson();
+        } else if ("/overlay/config".equals(path)) {
+            try {
+                JsonObject body = com.google.gson.JsonParser
+                        .parseString(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8))
+                        .getAsJsonObject();
+                o.applyConfig(body);
+                rsp = o.configJson();
+            } catch (Exception e) {
+                rsp = new JsonObject();
+                rsp.addProperty("ok", false);
+                rsp.addProperty("error", "bad request");
+            }
+        } else {
+            rsp = new JsonObject();
+            rsp.addProperty("ok", false);
+            rsp.addProperty("error", "unknown route");
+        }
+        byte[] out = rsp.toString().getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.sendResponseHeaders(200, out.length);
+        try (OutputStream os = ex.getResponseBody()) { os.write(out); }
+    }
+
     private void serveSettings(HttpExchange ex) throws IOException {
         JsonObject rsp = new JsonObject();
         String path = ex.getRequestURI().getPath();
@@ -790,6 +853,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         }
         appendHistory(LOOT_HISTORY, o);
         broadcast("death", o.toString());
+        if (overlay != null) overlay.refresh();
         PartyClient p = party;
         if (p != null && p.joined()) {
             JsonObject share = o.deepCopy();

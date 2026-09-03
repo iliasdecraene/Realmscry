@@ -123,6 +123,56 @@
   }
   .setting-row b { color: var(--text-primary); font-weight: 650; }
   .setting-row input { margin-top: 3px; accent-color: var(--bar); }
+
+  /* ---- Overlay configurator ---- */
+  .ovl-view {
+    display: grid; grid-template-columns: 300px 1fr; gap: 20px;
+    flex: 1; min-height: 0; align-items: start;
+  }
+  @media (max-width: 900px) { .ovl-view { grid-template-columns: 1fr; } }
+  .ovl-scene {
+    position: relative; width: 100%; aspect-ratio: 16 / 9;
+    background:
+      radial-gradient(ellipse at 50% 45%, #2b2921 0%, #23221c 55%, #1d1c18 100%);
+    border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; user-select: none; touch-action: none;
+  }
+  .gm-side {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 19%;
+    background: #161614; border-left: 1px solid #2a2a27;
+    padding: 8px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .gm-minimap {
+    width: 100%; aspect-ratio: 1; border-radius: 6px;
+    background: radial-gradient(circle at 50% 50%, #3d3527 0%, #2a2a1e 60%, #14140f 100%);
+    border: 1px solid #2e2e2a;
+  }
+  .gm-bar { height: 9px; border-radius: 4px; opacity: .55; }
+  .gm-bar.hp { background: #7cbf3f; }
+  .gm-bar.mp { background: #4f7fd9; }
+  .gm-slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+  .gm-slots i {
+    aspect-ratio: 1; background: #1f1f1c; border: 1px solid #2c2c28;
+    border-radius: 4px;
+  }
+  .gm-top { position: absolute; top: 10px; left: 10px; display: flex;
+    flex-direction: column; gap: 6px; }
+  .gm-chat { position: absolute; bottom: 10px; left: 10px; display: flex;
+    flex-direction: column; gap: 5px; opacity: .7; }
+  .gm-line { height: 8px; border-radius: 4px; background: #33322c; opacity: .8; }
+  .ovl-box {
+    position: absolute; border-radius: 8px; cursor: grab;
+    background: rgba(14, 14, 14, .62);
+    border: 1px solid rgba(255, 255, 255, .35);
+    color: var(--text-primary); overflow: hidden;
+    padding: 4px 8px; box-sizing: border-box;
+  }
+  .ovl-box:active { cursor: grabbing; border-color: var(--bar); }
+  .ovl-box .ob-label { font-size: 8px; font-weight: 700; letter-spacing: .08em;
+    color: var(--text-muted); }
+  .ovl-box .ob-main { font-size: 10px; font-weight: 650; white-space: nowrap;
+    overflow: hidden; }
+  .ovl-box .ob-sub { font-size: 8px; color: var(--text-muted); white-space: nowrap; }
   .party-pop {
     position: absolute; top: 54px; right: 0; z-index: 20; width: 270px;
     background: var(--surface-1); border: 1px solid var(--border);
@@ -596,6 +646,7 @@
     <nav class="tabs">
       <button id="navTracker" class="on" onclick="setView('tracker')">Tracker</button>
       <button id="navGuild" onclick="setView('guild')">Guild</button>
+      <button id="navOverlay" onclick="setView('overlay')">Overlay</button>
     </nav>
     <span id="map"></span>
     <span class="acct-btn" onclick="toggleAcctPop()">Account ▾</span>
@@ -645,6 +696,46 @@
       <button class="g-btn" onclick="saveAcctName()">Save</button>
       <div class="acct-ok" id="acctOk"></div>
       <div class="g-hint" id="acctIgn"></div>
+    </section>
+  </div>
+
+  <div class="ovl-view" id="viewOverlay" hidden>
+    <section class="card ovl-side">
+      <h2>Overlay boxes</h2>
+      <label class="setting-row"><input type="checkbox" id="ovlTimeline" onchange="ovlToggle()">
+        <span><b>Timeline</b><br><span class="g-hint" style="margin-top:2px">Your latest drop or death.</span></span></label>
+      <label class="setting-row"><input type="checkbox" id="ovlGuild" onchange="ovlToggle()">
+        <span><b>Guild timeline</b><br><span class="g-hint" style="margin-top:2px">The guild's latest event, with who got it.</span></span></label>
+      <label class="setting-row"><input type="checkbox" id="ovlBoss" onchange="ovlToggle()">
+        <span><b>Boss damage</b><br><span class="g-hint" style="margin-top:2px">Last boss kill: top 3 + your rank.</span></span></label>
+      <div class="g-hint" style="margin-top:16px">Drag the boxes on the preview —
+        the overlay uses the same spot over the game. It appears while
+        RotMG is running (windowed / borderless; exclusive fullscreen hides
+        all overlays) and is click-through.</div>
+      <div class="g-hint" id="ovlGame" style="margin-top:8px"></div>
+    </section>
+    <section class="card ovl-main">
+      <h2>Preview</h2>
+      <div class="ovl-scene" id="ovlScene">
+        <div class="gm-top">
+          <div class="gm-line" style="width:120px"></div>
+          <div class="gm-line" style="width:170px"></div>
+          <div class="gm-line" style="width:90px"></div>
+        </div>
+        <div class="gm-chat">
+          <div class="gm-line" style="width:150px"></div>
+          <div class="gm-line" style="width:110px"></div>
+          <div class="gm-line" style="width:130px"></div>
+        </div>
+        <div class="gm-side">
+          <div class="gm-minimap"></div>
+          <div class="gm-bar hp"></div>
+          <div class="gm-bar mp"></div>
+          <div class="gm-slots">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 
@@ -1150,11 +1241,100 @@ function setView(v) {
   $("viewTracker").hidden = v !== "tracker";
   $("viewGuild").hidden = v !== "guild";
   $("viewAccount").hidden = v !== "account";
+  $("navOverlay").classList.toggle("on", v === "overlay");
   $("viewSettings").hidden = v !== "settings";
+  $("viewOverlay").hidden = v !== "overlay";
   if (v === "guild") refreshGuild();
   if (v === "account") loadAccount();
   if (v === "settings") loadSettings();
+  if (v === "overlay") loadOverlay();
 }
+
+// ---- Overlay configurator ----
+// Positions are normalized to the scene (= the game window); box sizes
+// mirror the real overlay's fixed pixel sizes at a 1600px-wide reference.
+let ovl = null;
+const OVL_BOXES = {
+  timeline: { label: "TIMELINE", w: 330, h: 62, main: "Spider Silk Bow", sub: "WHITE · Test Realm · just now" },
+  guild:    { label: "GUILD",    w: 330, h: 62, main: "Shiny Spider Silk Bow", sub: "by FriendGuy · WHITE · 2m ago" },
+  boss:     { label: "LAST BOSS", w: 330, h: 118, main: "Septavius the Ghost God", sub: "#1 Alpha 120k · #4 You 70k" },
+};
+
+async function loadOverlay() {
+  try {
+    const s = await api("/overlay/status");
+    if (s.ok) {
+      ovl = s;
+      $("ovlTimeline").checked = !!s.timeline.on;
+      $("ovlGuild").checked = !!s.guild.on;
+      $("ovlBoss").checked = !!s.boss.on;
+      $("ovlGame").textContent = s.gameFound
+          ? "Game detected — overlay is live." : "Game not running right now.";
+      renderOvlScene();
+    }
+  } catch (e) {}
+}
+function ovlToggle() {
+  if (!ovl) return;
+  ovl.timeline.on = $("ovlTimeline").checked;
+  ovl.guild.on = $("ovlGuild").checked;
+  ovl.boss.on = $("ovlBoss").checked;
+  renderOvlScene();
+  saveOvl();
+}
+let ovlSaveTimer = null;
+function saveOvl() {
+  clearTimeout(ovlSaveTimer);
+  ovlSaveTimer = setTimeout(async () => {
+    try { await api("/overlay/config", ovl); } catch (e) {}
+  }, 350);
+}
+function renderOvlScene() {
+  const scene = $("ovlScene");
+  scene.querySelectorAll(".ovl-box").forEach(b => b.remove());
+  if (!ovl) return;
+  const scale = scene.clientWidth / 1600;
+  for (const key of Object.keys(OVL_BOXES)) {
+    if (!ovl[key] || !ovl[key].on) continue;
+    const meta = OVL_BOXES[key];
+    const b = document.createElement("div");
+    b.className = "ovl-box";
+    b.style.width = (meta.w * scale) + "px";
+    b.style.height = (meta.h * scale) + "px";
+    b.style.left = (ovl[key].x * scene.clientWidth) + "px";
+    b.style.top = (ovl[key].y * scene.clientHeight) + "px";
+    b.innerHTML = `<div class="ob-label">${meta.label}</div>
+      <div class="ob-main">${meta.main}</div>
+      <div class="ob-sub">${meta.sub}</div>`;
+    b.addEventListener("pointerdown", ev => startOvlDrag(ev, key, b));
+    scene.appendChild(b);
+  }
+}
+function startOvlDrag(ev, key, box) {
+  ev.preventDefault();
+  const scene = $("ovlScene");
+  const sr = scene.getBoundingClientRect();
+  const br = box.getBoundingClientRect();
+  const offX = ev.clientX - br.left, offY = ev.clientY - br.top;
+  const move = e => {
+    let x = e.clientX - sr.left - offX;
+    let y = e.clientY - sr.top - offY;
+    x = Math.max(0, Math.min(sr.width - br.width, x));
+    y = Math.max(0, Math.min(sr.height - br.height, y));
+    box.style.left = x + "px";
+    box.style.top = y + "px";
+    ovl[key].x = x / sr.width;
+    ovl[key].y = y / sr.height;
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    saveOvl();
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+}
+window.addEventListener("resize", () => { if (view === "overlay") renderOvlScene(); });
 
 async function loadSettings() {
   try {

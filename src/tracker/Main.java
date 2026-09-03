@@ -79,6 +79,10 @@ public class Main {
         guild.setProfileSource(state::myIcon, state::myIgn, state::myAccountId);
         web.setGuild(guild);
 
+        if (!GraphicsEnvironment.isHeadless()) {
+            web.setOverlay(new OverlayManager(web, guild)); // in-game overlay
+        }
+
         Register r = Register.INSTANCE;
         r.register(PacketType.MAPINFO, safe(state, p -> state.mapInfo((MapInfoPacket) p)));
         r.register(PacketType.CREATE_SUCCESS, safe(state, p -> state.createSuccess((CreateSuccessPacket) p)));
