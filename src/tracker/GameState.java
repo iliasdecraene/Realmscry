@@ -592,6 +592,48 @@ public class GameState {
         });
     }
 
+    private static final Map<Integer, Boolean> minorLootCache = new HashMap<>();
+
+    /**
+     * "Minor" loot is bag filler — potions, marks, event tokens — as opposed
+     * to the item that makes the bag worth opening (equipment, skins, pet
+     * eggs). The UI hides minor items whenever a real item is present.
+     * Unknown/label-less ids count as NOT minor so nothing real is hidden.
+     */
+    public static synchronized boolean isMinorLoot(int objectType) {
+        return minorLootCache.computeIfAbsent(objectType, t -> {
+            try {
+                String label = IdToAsset.getIdLabel(t);
+                // Real gear first: potions also carry EQUIPMENT, so only slot
+                // labels (and shiny/pet variants) count as "the real item".
+                if (label != null) {
+                    for (String s : label.split(",")) {
+                        switch (s) {
+                            case "WEAPON": case "ARMOR": case "RING": case "ABILITY":
+                            case "SKIN": case "PET_EGG": case "PETSKIN": case "SHINY":
+                                return false;
+                        }
+                    }
+                    for (String s : label.split(",")) {
+                        switch (s) {
+                            case "CONSUMABLE": case "STATPOTION": case "MARK":
+                                return true;
+                        }
+                    }
+                }
+                // Event/set tokens often have no telling labels — go by name.
+                String name = IdToAsset.objectName(t);
+                if (name != null) {
+                    String n = name.toLowerCase();
+                    if (n.contains("token") || n.startsWith("mark of")) return true;
+                }
+                return false; // unknown: keep visible rather than hide gear
+            } catch (Exception e) {
+                return false;
+            }
+        });
+    }
+
     /** Shiny variants are distinct object ids carrying a SHINY label token. */
     private static boolean isShiny(int objectType) {
         try {

@@ -267,6 +267,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
             anyShiny |= shiny;
             int slots = it.length > 2 ? it[2] : 0;
             if (slots > 0) item.addProperty("slots", slots);
+            if (GameState.isMinorLoot(it[0])) item.addProperty("minor", true);
             arr.add(item);
         }
         if (anyShiny) o.addProperty("shiny", true);

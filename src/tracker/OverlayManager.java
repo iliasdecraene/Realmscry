@@ -11,7 +11,6 @@ import com.sun.jna.win32.W32APIOptions;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
-import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics;
@@ -26,6 +25,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -36,19 +37,24 @@ import java.util.concurrent.TimeUnit;
  * The in-game overlay: one undecorated, per-pixel-translucent, always-on-top,
  * CLICK-THROUGH window positioned over the RotMG client, painting up to three
  * boxes (latest timeline event, latest guild event, last boss damage) at
- * user-chosen normalized positions configured in the web UI's Overlay tab.
+ * user-chosen normalized positions AND sizes configured in the Overlay tab.
  *
- * Click-through + no-activate is done via user32 extended window styles
- * through the JNA already bundled in the Tomato jar. The game window is
- * located by title every 2 s; the overlay hides when the game is gone.
- * Works with windowed / borderless game modes (exclusive fullscreen covers
- * any OS overlay). -Dtracker.overlaydebug anchors to the primary screen so
- * the overlay can be seen without the game.
+ * Geometry: each box stores x, y and w as fractions of the game window; the
+ * box is painted in a fixed 330-unit-wide design space and scaled to
+ * w * windowWidth, so the web preview and the real overlay always agree,
+ * and resizing keeps the aspect ratio by construction.
+ *
+ * Click-through + no-activate via user32 extended styles through the JNA
+ * bundled in the Tomato jar. The game window ("RotMGExalt") is located by
+ * title every 2 s; the overlay hides when the game is gone.
+ * -Dtracker.overlaydebug anchors to the primary screen for testing.
  */
 final class OverlayManager {
 
-    // ---- box geometry (logical px, fixed v1) ----
-    private static final int BOX_W = 330, TL_H = 62, GD_H = 62, BOSS_H = 118;
+    // Design space: every box is painted 330 units wide, then scaled.
+    static final int UNIT_W = 330;
+    static final int TL_H = 62, GD_H = 74, BOSS_H = 118;
+    private static final double DEF_W = 330.0 / 1600, MIN_W = 0.08, MAX_W = 0.6;
     private static final Path CONFIG = Paths.get("overlay.properties");
     private static final String WINDOW_TITLE = "Realmscry Overlay";
 
@@ -68,7 +74,7 @@ final class OverlayManager {
 
     static class Box {
         boolean on;
-        double x = 0.35, y = 0.05; // normalized top-left within the game area
+        double x = 0.35, y = 0.05, w = DEF_W;
     }
 
     private final Box timeline = new Box(), guildBox = new Box(), boss = new Box();
@@ -97,7 +103,7 @@ final class OverlayManager {
     }
 
     // ------------------------------------------------------------------
-    // Config (web UI -> here)
+    // Config (web UI <-> here)
     // ------------------------------------------------------------------
 
     synchronized JsonObject configJson() {
@@ -115,6 +121,7 @@ final class OverlayManager {
         o.addProperty("on", b.on);
         o.addProperty("x", b.x);
         o.addProperty("y", b.y);
+        o.addProperty("w", b.w);
         return o;
     }
 
@@ -130,12 +137,13 @@ final class OverlayManager {
         if (!cfg.has(key) || !cfg.get(key).isJsonObject()) return;
         JsonObject o = cfg.getAsJsonObject(key);
         if (o.has("on")) b.on = o.get("on").getAsBoolean();
-        if (o.has("x")) b.x = clamp(o.get("x").getAsDouble());
-        if (o.has("y")) b.y = clamp(o.get("y").getAsDouble());
+        if (o.has("x")) b.x = clamp(o.get("x").getAsDouble(), 0, 0.97);
+        if (o.has("y")) b.y = clamp(o.get("y").getAsDouble(), 0, 0.97);
+        if (o.has("w")) b.w = clamp(o.get("w").getAsDouble(), MIN_W, MAX_W);
     }
 
-    private static double clamp(double v) {
-        return Math.max(0, Math.min(0.97, v));
+    private static double clamp(double v, double lo, double hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     private void load() {
@@ -154,8 +162,9 @@ final class OverlayManager {
     private static void loadBox(Properties p, String k, Box b) {
         b.on = Boolean.parseBoolean(p.getProperty(k + ".on", "false"));
         try {
-            b.x = clamp(Double.parseDouble(p.getProperty(k + ".x", String.valueOf(b.x))));
-            b.y = clamp(Double.parseDouble(p.getProperty(k + ".y", String.valueOf(b.y))));
+            b.x = clamp(Double.parseDouble(p.getProperty(k + ".x", String.valueOf(b.x))), 0, 0.97);
+            b.y = clamp(Double.parseDouble(p.getProperty(k + ".y", String.valueOf(b.y))), 0, 0.97);
+            b.w = clamp(Double.parseDouble(p.getProperty(k + ".w", String.valueOf(b.w))), MIN_W, MAX_W);
         } catch (NumberFormatException ignored) {
         }
     }
@@ -178,6 +187,7 @@ final class OverlayManager {
         p.setProperty(k + ".on", String.valueOf(b.on));
         p.setProperty(k + ".x", String.valueOf(b.x));
         p.setProperty(k + ".y", String.valueOf(b.y));
+        p.setProperty(k + ".w", String.valueOf(b.w));
     }
 
     // ------------------------------------------------------------------
@@ -299,143 +309,244 @@ final class OverlayManager {
     }
 
     // ------------------------------------------------------------------
-    // Painting
+    // Painting — styled to match the web app's timeline rows
     // ------------------------------------------------------------------
 
-    private static final Color BG = new Color(14, 14, 14, 150);
-    private static final Color BORDER = new Color(255, 255, 255, 80);
-    private static final Color TEXT = new Color(255, 255, 255, 235);
-    private static final Color MUTED = new Color(200, 200, 200, 170);
+    private static final Color SURFACE = new Color(26, 26, 25, 205);
+    private static final Color SURFACE2 = new Color(35, 35, 34, 220);
+    private static final Color BORDER = new Color(78, 78, 74, 235);
+    private static final Color TEXT = new Color(255, 255, 255, 245);
+    private static final Color SECONDARY = new Color(205, 204, 192, 235);
+    private static final Color MUTED = new Color(170, 169, 158, 220);
     private static final Color GOLD = new Color(232, 195, 90);
     private static final Color RED = new Color(230, 103, 103);
     private static final Color CYAN = new Color(123, 226, 255);
-    private static final Font LABEL = new Font("Segoe UI", Font.BOLD, 10);
+    private static final Color DEATH_BG = new Color(48, 24, 24, 210);
+    private static final Color DEATH_BORDER = new Color(109, 43, 43, 240);
+    private static final Color BAG_WHITE = new Color(245, 244, 239);
+    private static final Color BAG_ORANGE = new Color(217, 89, 38);
+    private static final Color BAG_RED = new Color(230, 103, 103);
+    private static final Font CHIP = new Font("Segoe UI", Font.BOLD, 10);
     private static final Font MAIN = new Font("Segoe UI", Font.BOLD, 13);
     private static final Font SUB = new Font("Segoe UI", Font.PLAIN, 11);
 
     private void paintOverlay(Graphics2D g, int w, int h) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        if (timeline.on) paintTimelineBox(g, px(timeline.x, w), px(timeline.y, h),
-                "TIMELINE", web.latestTimelineEntry(), null);
-        if (guildBox.on) paintGuildBox(g, px(guildBox.x, w), px(guildBox.y, h));
-        if (boss.on) paintBossBox(g, px(boss.x, w), px(boss.y, h));
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+        if (timeline.on) paintScaled(g, timeline, w, h, TL_H,
+                gg -> paintTimelineContent(gg, web.latestTimelineEntry()));
+        if (guildBox.on) paintScaled(g, guildBox, w, h, GD_H, this::paintGuildContent);
+        if (boss.on) paintScaled(g, boss, w, h, BOSS_H, this::paintBossContent);
     }
 
-    private static int px(double norm, int total) {
-        return (int) (norm * total);
+    private interface Painter {
+        void paint(Graphics2D g);
     }
 
-    private void boxBg(Graphics2D g, int x, int y, int bw, int bh, Color border) {
-        g.setColor(BG);
-        g.fillRoundRect(x, y, bw, bh, 10, 10);
-        g.setColor(border == null ? BORDER : border);
-        g.drawRoundRect(x, y, bw, bh, 10, 10);
+    private void paintScaled(Graphics2D g, Box b, int w, int h, int unitH, Painter p) {
+        Graphics2D g2 = (Graphics2D) g.create();
+        try {
+            double scale = (b.w * w) / UNIT_W;
+            g2.translate(b.x * w, b.y * h);
+            g2.scale(scale, scale);
+            p.paint(g2);
+        } finally {
+            g2.dispose();
+        }
     }
 
-    private void label(Graphics2D g, int x, int y, String s) {
-        g.setFont(LABEL);
-        g.setColor(MUTED);
-        g.drawString(s, x + 10, y + 14);
+    private void bg(Graphics2D g, int hUnits, Color fill, Color border) {
+        g.setColor(fill);
+        g.fillRoundRect(0, 0, UNIT_W, hUnits, 10, 10);
+        g.setColor(border);
+        g.drawRoundRect(0, 0, UNIT_W, hUnits, 10, 10);
     }
 
-    private void paintTimelineBox(Graphics2D g, int x, int y, String title,
-                                  JsonObject e, String author) {
-        boolean death = e != null && e.has("type")
-                && "death".equals(e.get("type").getAsString());
+    /** Items worth showing: hide "minor" filler when a real item is present. */
+    private static List<JsonObject> shownItems(JsonObject e) {
+        List<JsonObject> all = new ArrayList<>(), major = new ArrayList<>();
+        if (e != null && e.has("items")) {
+            for (var el : e.getAsJsonArray("items")) {
+                JsonObject it = el.getAsJsonObject();
+                all.add(it);
+                if (!it.has("minor")) major.add(it);
+            }
+        }
+        return major.isEmpty() ? all : major;
+    }
+
+    private void paintTimelineContent(Graphics2D g, JsonObject e) {
+        boolean death = e != null && e.has("type") && "death".equals(str(e, "type", ""));
+        if (death) {
+            paintDeathRow(g, e, 10);
+            return;
+        }
         boolean shiny = e != null && e.has("shiny");
-        Color border = death ? RED : shiny ? CYAN : null;
-        boxBg(g, x, y, BOX_W, TL_H, border);
-        label(g, x, y, title);
+        bg(g, TL_H, SURFACE, shiny ? CYAN : BORDER);
         if (e == null) {
             g.setFont(SUB);
             g.setColor(MUTED);
-            g.drawString("nothing yet", x + 10, y + 40);
+            g.drawString("no drops yet", 12, 36);
             return;
         }
-        int cx = x + 10, cy = y + 24;
-        String main, sub;
-        if (death) {
-            g.setFont(MAIN);
-            g.setColor(RED);
-            g.drawString("☠", cx, cy + 14);
-            cx += 18;
-            int icon = e.has("icon") ? e.get("icon").getAsInt() : 0;
-            cx = drawIcon(g, icon, cx, cy);
-            main = str(e, "name", "Unknown") + " died to " + str(e, "killedBy", "?");
-            int maxed = e.has("maxed") ? e.get("maxed").getAsInt() : -1;
-            sub = (maxed >= 0 ? maxed + "/8 · " : "") + str(e, "map", "") + " · " + ago(e);
-        } else {
-            JsonArray items = e.has("items") ? e.getAsJsonArray("items") : new JsonArray();
-            StringBuilder names = new StringBuilder();
-            for (int i = 0; i < items.size(); i++) {
-                JsonObject it = items.get(i).getAsJsonObject();
-                if (i < 3) cx = drawIcon(g, it.get("id").getAsInt(), cx, cy);
-                if (names.length() > 0) names.append(", ");
-                names.append(str(it, "name", "?"));
-            }
-            main = names.length() == 0 ? "drop" : names.toString();
-            sub = str(e, "tier", "").toUpperCase() + " · " + str(e, "map", "") + " · " + ago(e);
+        // tier chip like the web pill
+        String tier = str(e, "tier", "").toUpperCase();
+        Color swatch = switch (str(e, "tier", "")) {
+            case "orange" -> BAG_ORANGE;
+            case "red" -> BAG_RED;
+            case "shiny" -> CYAN;
+            default -> BAG_WHITE;
+        };
+        g.setFont(CHIP);
+        int chipW = g.getFontMetrics().stringWidth(tier) + 26;
+        g.setColor(SURFACE2);
+        g.fillRoundRect(10, 10, chipW, 18, 9, 9);
+        g.setColor(swatch);
+        g.fillRoundRect(17, 15, 8, 8, 3, 3);
+        g.setColor(SECONDARY);
+        g.drawString(tier, 29, 23);
+        // items: sprites + names
+        int cx = 10;
+        int cy = 32;
+        List<JsonObject> items = shownItems(e);
+        StringBuilder names = new StringBuilder();
+        for (int i = 0; i < items.size(); i++) {
+            if (i < 3) cx = drawIcon(g, items.get(i).has("id") ? items.get(i).get("id").getAsInt() : 0, cx, cy, 20);
+            if (names.length() > 0) names.append(", ");
+            names.append(str(items.get(i), "name", "?"));
         }
-        if (author != null) sub = "by " + author + " · " + sub;
         g.setFont(MAIN);
-        g.setColor(death ? RED : shiny ? CYAN : TEXT);
-        g.drawString(trim(g, main, BOX_W - (cx - x) - 14), cx + 4, cy + 14);
+        g.setColor(shiny ? CYAN : TEXT);
+        g.drawString(trim(g, names.toString(), UNIT_W - cx - 16), cx + 4, cy + 15);
+        // meta right of the chip
         g.setFont(SUB);
         g.setColor(MUTED);
-        g.drawString(trim(g, sub, BOX_W - 20), x + 10, y + TL_H - 9);
+        g.drawString(trim(g, str(e, "map", "") + " · " + ago(e), UNIT_W - chipW - 30), chipW + 20, 23);
     }
 
-    private void paintGuildBox(Graphics2D g, int x, int y) {
+    /** Death card matching the web style; x0 = left content offset. */
+    private void paintDeathRow(Graphics2D g, JsonObject e, int x0) {
+        bg(g, TL_H, DEATH_BG, DEATH_BORDER);
+        g.setFont(MAIN);
+        g.setColor(RED);
+        g.drawString("☠", x0, 26);
+        int cx = drawIcon(g, e.has("icon") ? e.get("icon").getAsInt() : 0, x0 + 18, 10, 22);
+        g.setColor(TEXT);
+        String name = str(e, "name", "Unknown");
+        g.drawString(trim(g, name, 130), cx + 4, 22);
+        g.setFont(SUB);
+        g.setColor(SECONDARY);
+        g.drawString(trim(g, "killed by ", 70), cx + 4, 38);
+        int kx = cx + 4 + g.getFontMetrics().stringWidth("killed by ");
+        g.setColor(RED);
+        g.drawString(trim(g, str(e, "killedBy", "?"), UNIT_W - kx - 60), kx, 38);
+        int maxed = e.has("maxed") ? e.get("maxed").getAsInt() : -1;
+        if (maxed >= 0) {
+            g.setFont(CHIP);
+            String badge = maxed + "/8";
+            int bw = g.getFontMetrics().stringWidth(badge) + 14;
+            g.setColor(SURFACE2);
+            g.fillRoundRect(UNIT_W - bw - 10, 10, bw, 16, 8, 8);
+            g.setColor(maxed >= 8 ? GOLD : SECONDARY);
+            g.drawString(badge, UNIT_W - bw - 3, 22);
+        }
+        g.setFont(SUB);
+        g.setColor(MUTED);
+        g.drawString(trim(g, str(e, "map", "") + " · " + ago(e), 140), UNIT_W - 150, TL_H - 10);
+    }
+
+    /** Guild box: big member avatar hard left, event info to the right. */
+    private void paintGuildContent(Graphics2D g) {
         JsonObject ev = latestGuildEvent;
+        bg(g, GD_H, SURFACE, BORDER);
         if (ev == null) {
-            boxBg(g, x, y, BOX_W, GD_H, null);
-            label(g, x, y, "GUILD" + (guild != null && guild.inGuild() ? "" : " (no guild)"));
-            g.setFont(SUB);
+            g.setFont(CHIP);
             g.setColor(MUTED);
-            g.drawString("nothing yet", x + 10, y + 40);
+            g.drawString("GUILD", 10, 18);
+            g.setFont(SUB);
+            g.drawString(guild != null && guild.inGuild() ? "nothing yet" : "not in a guild", 12, 44);
             return;
         }
         JsonObject data = ev.has("data") ? ev.getAsJsonObject("data") : new JsonObject();
+        boolean death = "death".equals(str(ev, "type", str(data, "type", "")));
+        boolean shiny = data.has("shiny");
+        if (death) bg(g, GD_H, DEATH_BG, DEATH_BORDER);
+        else if (shiny) bg(g, GD_H, SURFACE, CYAN);
+        // avatar panel
+        int icon = ev.has("icon") ? ev.get("icon").getAsInt() : 0;
+        g.setColor(SURFACE2);
+        g.fillRoundRect(8, 8, GD_H - 16, GD_H - 16, 8, 8);
+        drawIcon(g, icon, 12, 12, GD_H - 24);
+        int x0 = GD_H + 2;
         String who = str(ev, "dname", "").isEmpty() ? str(ev, "ign", "Unknown") : str(ev, "dname", "");
-        paintTimelineBox(g, x, y, "GUILD", data, who);
+        g.setFont(MAIN);
+        g.setColor(death ? RED : GOLD);
+        g.drawString(trim(g, who, UNIT_W - x0 - 60), x0, 24);
+        g.setFont(SUB);
+        g.setColor(MUTED);
+        String agoS = ago(ev);
+        g.drawString(agoS, UNIT_W - 12 - g.getFontMetrics().stringWidth(agoS), 24);
+        if (death) {
+            g.setFont(SUB);
+            g.setColor(SECONDARY);
+            String cause = "☠ died to " + str(data, "killedBy", "?");
+            int maxed = data.has("maxed") ? data.get("maxed").getAsInt() : -1;
+            if (maxed >= 0) cause += "  ·  " + maxed + "/8";
+            g.drawString(trim(g, cause, UNIT_W - x0 - 12), x0, 44);
+        } else {
+            int cx = x0;
+            List<JsonObject> items = shownItems(data);
+            StringBuilder names = new StringBuilder();
+            for (int i = 0; i < items.size(); i++) {
+                if (i < 2) cx = drawIcon(g, items.get(i).has("id") ? items.get(i).get("id").getAsInt() : 0, cx, 32, 18);
+                if (names.length() > 0) names.append(", ");
+                names.append(str(items.get(i), "name", "?"));
+            }
+            g.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            g.setColor(shiny ? CYAN : TEXT);
+            g.drawString(trim(g, names.toString(), UNIT_W - cx - 16), cx + 4, 45);
+        }
+        g.setFont(SUB);
+        g.setColor(MUTED);
+        g.drawString(trim(g, str(data, "tier", "").toUpperCase() + (str(data, "map", "").isEmpty() ? "" : " · " + str(data, "map", "")), UNIT_W - x0 - 12), x0, GD_H - 12);
     }
 
-    private void paintBossBox(Graphics2D g, int x, int y) {
-        boxBg(g, x, y, BOX_W, BOSS_H, null);
+    private void paintBossContent(Graphics2D g) {
+        bg(g, BOSS_H, SURFACE, BORDER);
         JsonObject b = web.lastBossJson();
-        label(g, x, y, "LAST BOSS");
+        g.setFont(CHIP);
+        g.setColor(MUTED);
+        g.drawString("LAST BOSS", 10, 18);
         if (b == null) {
             g.setFont(SUB);
-            g.setColor(MUTED);
-            g.drawString("no boss kills yet", x + 10, y + 40);
+            g.drawString("no boss kills yet", 12, 44);
             return;
         }
+        int cx = drawIcon(g, b.has("icon") ? b.get("icon").getAsInt() : 0, 10, 24, 24);
         g.setFont(MAIN);
         g.setColor(TEXT);
-        g.drawString(trim(g, str(b, "name", "?"), BOX_W - 20), x + 10, y + 30);
+        g.drawString(trim(g, str(b, "name", "?"), UNIT_W - cx - 16), cx + 6, 41);
         JsonArray top = b.has("top") ? b.getAsJsonArray("top") : new JsonArray();
-        int line = 0;
-        int yy = y + 48;
+        int line = 0, yy = 62;
         for (int i = 0; i < top.size() && line < 4; i++) {
             JsonObject t = top.get(i).getAsJsonObject();
             boolean me = t.has("me") && t.get("me").getAsBoolean();
-            if (line == 3 && !me) continue; // reserve the 4th line for our row
+            if (line == 3 && !me) continue; // keep the last line for our row
             int rank = t.has("rank") ? t.get("rank").getAsInt() : i + 1;
-            if (line < 3 || me) {
-                g.setFont(SUB);
-                g.setColor(me ? GOLD : TEXT);
-                String row = "#" + rank + "  " + str(t, "name", "?");
-                g.drawString(trim(g, row, 210), x + 12, yy);
-                String dmg = fmt(t.has("dmg") ? t.get("dmg").getAsLong() : 0);
-                g.drawString(dmg, x + BOX_W - 12 - g.getFontMetrics().stringWidth(dmg), yy);
-                yy += 16;
-                line++;
-            }
+            g.setFont(SUB);
+            g.setColor(MUTED);
+            g.drawString("#" + rank, 12, yy);
+            g.setColor(me ? GOLD : SECONDARY);
+            g.drawString(trim(g, str(t, "name", "?"), 190), 40, yy);
+            String dmg = fmt(t.has("dmg") ? t.get("dmg").getAsLong() : 0);
+            g.drawString(dmg, UNIT_W - 12 - g.getFontMetrics().stringWidth(dmg), yy);
+            yy += 15;
+            line++;
         }
     }
 
-    private int drawIcon(Graphics2D g, int id, int cx, int cy) {
+    private int drawIcon(Graphics2D g, int id, int cx, int cy, int size) {
         if (id <= 0) return cx;
         BufferedImage img = icons.computeIfAbsent(id, k -> {
             try {
@@ -447,11 +558,8 @@ final class OverlayManager {
             }
         });
         if (img == null) return cx;
-        java.awt.Composite old = g.getComposite();
-        g.setComposite(AlphaComposite.SrcOver);
-        g.drawImage(img, cx, cy, 20, 20, null);
-        g.setComposite(old);
-        return cx + 23;
+        g.drawImage(img, cx, cy, size, size, null);
+        return cx + size + 3;
     }
 
     private String trim(Graphics2D g, String s, int maxW) {

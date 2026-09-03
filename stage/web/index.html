@@ -126,10 +126,13 @@
 
   /* ---- Overlay configurator ---- */
   .ovl-view {
-    display: grid; grid-template-columns: 300px 1fr; gap: 20px;
-    flex: 1; min-height: 0; align-items: start;
+    display: flex; flex-direction: column; gap: 20px;
+    flex: 1; min-height: 0;
   }
-  @media (max-width: 900px) { .ovl-view { grid-template-columns: 1fr; } }
+  .ovl-side .ovl-checks { display: flex; gap: 34px; flex-wrap: wrap; }
+  .ovl-side .setting-row { margin-top: 4px; }
+  .ovl-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .ovl-main .ovl-scene { flex: 1; min-height: 0; max-height: 100%; }
   .ovl-scene {
     position: relative; width: 100%; aspect-ratio: 16 / 9;
     background:
@@ -160,19 +163,36 @@
   .gm-chat { position: absolute; bottom: 10px; left: 10px; display: flex;
     flex-direction: column; gap: 5px; opacity: .7; }
   .gm-line { height: 8px; border-radius: 4px; background: #33322c; opacity: .8; }
-  .ovl-box {
-    position: absolute; border-radius: 8px; cursor: grab;
-    background: rgba(14, 14, 14, .62);
-    border: 1px solid rgba(255, 255, 255, .35);
-    color: var(--text-primary); overflow: hidden;
-    padding: 4px 8px; box-sizing: border-box;
+  .ovl-box { position: absolute; cursor: grab; }
+  .ovl-box:active { cursor: grabbing; }
+  .ovl-box .ob-inner {
+    width: 330px; transform-origin: top left; pointer-events: none;
+    border-radius: 8px; box-sizing: border-box;
+    background: rgba(26, 26, 25, .8);
+    border: 1px solid #4e4e4a;
+    color: var(--text-primary); overflow: hidden; padding: 8px 10px;
   }
-  .ovl-box:active { cursor: grabbing; border-color: var(--bar); }
-  .ovl-box .ob-label { font-size: 8px; font-weight: 700; letter-spacing: .08em;
-    color: var(--text-muted); }
-  .ovl-box .ob-main { font-size: 10px; font-weight: 650; white-space: nowrap;
-    overflow: hidden; }
-  .ovl-box .ob-sub { font-size: 8px; color: var(--text-muted); white-space: nowrap; }
+  .ovl-box .ob-inner.death { background: rgba(48, 24, 24, .82); border-color: #6d2b2b; }
+  .ob-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 10px; font-weight: 700; letter-spacing: .04em;
+    padding: 2px 9px 2px 7px; border-radius: 999px;
+    background: #232322; color: var(--text-secondary);
+  }
+  .ob-chip .sw { width: 8px; height: 8px; border-radius: 3px; background: var(--bag-white); }
+  .ob-main { font-size: 13px; font-weight: 650; white-space: nowrap; overflow: hidden; margin-top: 3px; }
+  .ob-sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+  .ob-guild { display: flex; gap: 10px; align-items: center; }
+  .ob-ava { width: 52px; height: 52px; flex: none; border-radius: 8px;
+    background: #232322; display: flex; align-items: center; justify-content: center;
+    font-size: 24px; }
+  .ob-rows { font-size: 11px; color: var(--text-secondary); margin-top: 4px; line-height: 1.5; }
+  .ob-rows .me { color: var(--you); }
+  .ovl-handle {
+    position: absolute; right: -5px; bottom: -5px; width: 11px; height: 11px;
+    background: var(--bar); border-radius: 3px; cursor: nwse-resize;
+    border: 1px solid #fff3;
+  }
   .party-pop {
     position: absolute; top: 54px; right: 0; z-index: 20; width: 270px;
     background: var(--surface-1); border: 1px solid var(--border);
@@ -577,13 +597,21 @@
     flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px;
     scrollbar-width: thin; scrollbar-color: var(--surface-2) transparent;
   }
-  .g-ev { border-top: 1px solid var(--border); padding: 8px 0 2px; }
+  .g-ev { border-top: 1px solid var(--border); padding: 8px 0 2px;
+    display: flex; gap: 12px; }
   .g-ev:first-child { border-top: none; }
+  .g-ev-ava {
+    flex: none; width: 54px; height: 54px; border-radius: 8px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    align-self: center;
+  }
+  .g-ev-ava img { width: 46px; height: 46px; image-rendering: pixelated; }
+  .g-ev-body { flex: 1; min-width: 0; }
   .g-ev-head {
     display: flex; align-items: center; gap: 8px;
     font-size: 12px; color: var(--text-secondary);
   }
-  .g-ev-head img { width: 20px; height: 20px; image-rendering: pixelated; }
   .g-ev-head .gname { font-weight: 650; }
   .g-ev-head .gago { color: var(--text-muted); margin-left: auto; }
   .heart {
@@ -702,17 +730,18 @@
   <div class="ovl-view" id="viewOverlay" hidden>
     <section class="card ovl-side">
       <h2>Overlay boxes</h2>
-      <label class="setting-row"><input type="checkbox" id="ovlTimeline" onchange="ovlToggle()">
-        <span><b>Timeline</b><br><span class="g-hint" style="margin-top:2px">Your latest drop or death.</span></span></label>
-      <label class="setting-row"><input type="checkbox" id="ovlGuild" onchange="ovlToggle()">
-        <span><b>Guild timeline</b><br><span class="g-hint" style="margin-top:2px">The guild's latest event, with who got it.</span></span></label>
-      <label class="setting-row"><input type="checkbox" id="ovlBoss" onchange="ovlToggle()">
-        <span><b>Boss damage</b><br><span class="g-hint" style="margin-top:2px">Last boss kill: top 3 + your rank.</span></span></label>
-      <div class="g-hint" style="margin-top:16px">Drag the boxes on the preview —
-        the overlay uses the same spot over the game. It appears while
-        RotMG is running (windowed / borderless; exclusive fullscreen hides
-        all overlays) and is click-through.</div>
-      <div class="g-hint" id="ovlGame" style="margin-top:8px"></div>
+      <div class="ovl-checks">
+        <label class="setting-row"><input type="checkbox" id="ovlTimeline" onchange="ovlToggle()">
+          <span><b>Timeline</b><br><span class="g-hint" style="margin-top:2px">Your latest drop or death.</span></span></label>
+        <label class="setting-row"><input type="checkbox" id="ovlGuild" onchange="ovlToggle()">
+          <span><b>Guild timeline</b><br><span class="g-hint" style="margin-top:2px">The guild's latest event, with who got it.</span></span></label>
+        <label class="setting-row"><input type="checkbox" id="ovlBoss" onchange="ovlToggle()">
+          <span><b>Boss damage</b><br><span class="g-hint" style="margin-top:2px">Last boss kill: top 3 + your rank.</span></span></label>
+      </div>
+      <div class="g-hint" style="margin-top:12px">Drag a box to place it; drag its
+        corner handle to resize (aspect stays fixed). The overlay mirrors this
+        exactly over the game while it's running (windowed / borderless), and
+        is click-through. <span id="ovlGame"></span></div>
     </section>
     <section class="card ovl-main">
       <h2>Preview</h2>
@@ -869,7 +898,8 @@ const lootRow = (l, plain) => {
                   : '<span class="swatch"></span>'}</span>${
         (l.boosted ? "B. " : "") + l.tier.toUpperCase()}</span>
       <div class="loot-items">
-        <div class="item">${l.items.map(i => {
+        <div class="item">${((l.items || []).some(i => !i.minor)
+          ? l.items.filter(i => !i.minor) : (l.items || [])).map(i => {
           const n = Math.min(i.slots || 0, 4);
           return `<span class="itm${i.shiny ? " shiny" : ""}${n ? " ench" + n : ""}"${
             n ? ` title="${n} enchantment slot${n > 1 ? "s" : ""}"` : ""
@@ -1254,10 +1284,23 @@ function setView(v) {
 // Positions are normalized to the scene (= the game window); box sizes
 // mirror the real overlay's fixed pixel sizes at a 1600px-wide reference.
 let ovl = null;
+// Design space: 330 units wide, heights per box type — must match the jar.
 const OVL_BOXES = {
-  timeline: { label: "TIMELINE", w: 330, h: 62, main: "Spider Silk Bow", sub: "WHITE · Test Realm · just now" },
-  guild:    { label: "GUILD",    w: 330, h: 62, main: "Shiny Spider Silk Bow", sub: "by FriendGuy · WHITE · 2m ago" },
-  boss:     { label: "LAST BOSS", w: 330, h: 118, main: "Septavius the Ghost God", sub: "#1 Alpha 120k · #4 You 70k" },
+  timeline: { h: 62, html: `
+    <span class="ob-chip"><span class="sw"></span>WHITE</span>
+    <span class="ob-sub"> Test Realm · just now</span>
+    <div class="ob-main">Spider Silk Bow</div>` },
+  guild: { h: 74, html: `
+    <div class="ob-guild"><div class="ob-ava">🧙</div><div style="min-width:0">
+      <div class="ob-main" style="margin-top:0;color:var(--you)">FriendGuy
+        <span class="ob-sub">· 2m ago</span></div>
+      <div class="ob-main" style="font-size:12px">Shiny Spider Silk Bow</div>
+      <div class="ob-sub">WHITE · Sprite World</div>
+    </div></div>` },
+  boss: { h: 118, html: `
+    <span class="ob-sub" style="font-weight:700;letter-spacing:.06em">LAST BOSS</span>
+    <div class="ob-main">Septavius the Ghost God</div>
+    <div class="ob-rows">#1 Alpha · 120k<br>#2 Gamma · 80k<br><span class="me">#4 You · 70k</span></div>` },
 };
 
 async function loadOverlay() {
@@ -1293,20 +1336,27 @@ function renderOvlScene() {
   const scene = $("ovlScene");
   scene.querySelectorAll(".ovl-box").forEach(b => b.remove());
   if (!ovl) return;
-  const scale = scene.clientWidth / 1600;
   for (const key of Object.keys(OVL_BOXES)) {
     if (!ovl[key] || !ovl[key].on) continue;
     const meta = OVL_BOXES[key];
+    // Box width is a fraction of the scene (= the game window), identical
+    // to how the jar scales it: pixelW = w * sceneW, scale = pixelW / 330.
+    const pw = (ovl[key].w || 330 / 1600) * scene.clientWidth;
+    const scale = pw / 330;
+    const ph = meta.h * scale;
     const b = document.createElement("div");
     b.className = "ovl-box";
-    b.style.width = (meta.w * scale) + "px";
-    b.style.height = (meta.h * scale) + "px";
+    b.style.width = pw + "px";
+    b.style.height = ph + "px";
     b.style.left = (ovl[key].x * scene.clientWidth) + "px";
     b.style.top = (ovl[key].y * scene.clientHeight) + "px";
-    b.innerHTML = `<div class="ob-label">${meta.label}</div>
-      <div class="ob-main">${meta.main}</div>
-      <div class="ob-sub">${meta.sub}</div>`;
-    b.addEventListener("pointerdown", ev => startOvlDrag(ev, key, b));
+    b.innerHTML = `<div class="ob-inner${key === "timeline" ? "" : ""}"
+        style="height:${meta.h}px;transform:scale(${scale})">${meta.html}</div>
+      <div class="ovl-handle"></div>`;
+    b.addEventListener("pointerdown", ev => {
+      if (ev.target.classList.contains("ovl-handle")) startOvlResize(ev, key, b, meta);
+      else startOvlDrag(ev, key, b);
+    });
     scene.appendChild(b);
   }
 }
@@ -1325,6 +1375,31 @@ function startOvlDrag(ev, key, box) {
     box.style.top = y + "px";
     ovl[key].x = x / sr.width;
     ovl[key].y = y / sr.height;
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    saveOvl();
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+}
+function startOvlResize(ev, key, box, meta) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  const scene = $("ovlScene");
+  const sr = scene.getBoundingClientRect();
+  const br = box.getBoundingClientRect();
+  const move = e => {
+    // width follows the pointer; height follows from the fixed aspect
+    let pw = e.clientX - br.left;
+    pw = Math.max(0.08 * sr.width, Math.min(0.6 * sr.width, pw));
+    const scale = pw / 330;
+    box.style.width = pw + "px";
+    box.style.height = (meta.h * scale) + "px";
+    const inner = box.querySelector(".ob-inner");
+    if (inner) inner.style.transform = `scale(${scale})`;
+    ovl[key].w = pw / sr.width;
   };
   const up = () => {
     window.removeEventListener("pointermove", move);
@@ -1465,15 +1540,18 @@ function guildEventHtml(e) {
   const body = e.type === "death" ? deathRow(d, true) : lootRow(d, true);
   return `
     <div class="g-ev">
-      <div class="g-ev-head">
-        ${e.icon > 0 ? `<img src="/icon/${e.icon}" alt="" onerror="this.remove()">` : ""}
-        <span class="gname">${esc(e.dname || e.ign || "Unknown")}${e.mine ? " (you)" : ""}</span>
-        <span class="gago">${ago(e.ts)}</span>
-        <button class="heart${e.likedByMe ? " liked" : ""}"
-          onclick="guildLike(${e.id}, ${e.likedByMe ? "false" : "true"})">
-          ${e.likedByMe ? "♥" : "♡"}${e.likes > 0 ? " " + e.likes : ""}</button>
+      <div class="g-ev-ava">${e.icon > 0
+        ? `<img src="/icon/${e.icon}" alt="" onerror="this.remove()">` : ""}</div>
+      <div class="g-ev-body">
+        <div class="g-ev-head">
+          <span class="gname">${esc(e.dname || e.ign || "Unknown")}${e.mine ? " (you)" : ""}</span>
+          <span class="gago">${ago(e.ts)}</span>
+          <button class="heart${e.likedByMe ? " liked" : ""}"
+            onclick="guildLike(${e.id}, ${e.likedByMe ? "false" : "true"})">
+            ${e.likedByMe ? "♥" : "♡"}${e.likes > 0 ? " " + e.likes : ""}</button>
+        </div>
+        ${body}
       </div>
-      ${body}
     </div>`;
 }
 
