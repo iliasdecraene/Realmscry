@@ -116,6 +116,13 @@
     border-radius: 6px; color: var(--text-primary); font: inherit; font-size: 14px;
   }
   .acct-ok { color: var(--live); font-size: 12px; margin-top: 8px; min-height: 15px; }
+  .setting-row {
+    display: flex; gap: 12px; align-items: flex-start;
+    margin-top: 12px; cursor: pointer; font-size: 13.5px;
+    color: var(--text-secondary);
+  }
+  .setting-row b { color: var(--text-primary); font-weight: 650; }
+  .setting-row input { margin-top: 3px; accent-color: var(--bar); }
   .party-pop {
     position: absolute; top: 54px; right: 0; z-index: 20; width: 270px;
     background: var(--surface-1); border: 1px solid var(--border);
@@ -595,7 +602,7 @@
     <span id="conn"><span class="dot"></span><span id="connText">connecting…</span></span>
     <div class="acct-pop" id="acctPop" hidden>
       <button onclick="toggleAcctPop();setView('account')">Account</button>
-      <button disabled title="Coming soon">Settings — soon</button>
+      <button onclick="toggleAcctPop();setView('settings')">Settings</button>
     </div>
   </header>
 
@@ -638,6 +645,22 @@
       <button class="g-btn" onclick="saveAcctName()">Save</button>
       <div class="acct-ok" id="acctOk"></div>
       <div class="g-hint" id="acctIgn"></div>
+    </section>
+  </div>
+
+  <div class="acct-view" id="viewSettings" hidden>
+    <section class="card acct-card">
+      <h2>Settings</h2>
+      <label class="setting-row">
+        <input type="checkbox" id="setAutoLaunch" onchange="toggleAutoLaunch()">
+        <span><b>Launch with the game</b><br>
+          <span class="g-hint" style="margin-top:2px">Starts Realmscry
+            automatically whenever Realm of the Mad God starts. Installs a
+            tiny watcher in your Windows Startup folder; untick to remove
+            it. If you move Realmscry.jar, re-tick to update the path.</span>
+        </span>
+      </label>
+      <div class="acct-ok" id="setOk"></div>
     </section>
   </div>
 </div>
@@ -1127,8 +1150,33 @@ function setView(v) {
   $("viewTracker").hidden = v !== "tracker";
   $("viewGuild").hidden = v !== "guild";
   $("viewAccount").hidden = v !== "account";
+  $("viewSettings").hidden = v !== "settings";
   if (v === "guild") refreshGuild();
   if (v === "account") loadAccount();
+  if (v === "settings") loadSettings();
+}
+
+async function loadSettings() {
+  try {
+    const s = await api("/settings/status");
+    if (s.ok) {
+      $("setAutoLaunch").checked = !!s.autoLaunch;
+      $("setAutoLaunch").disabled = !s.autoLaunchSupported;
+      $("setOk").textContent = s.autoLaunchSupported ? "" : "Windows only.";
+    }
+  } catch (e) {}
+}
+async function toggleAutoLaunch() {
+  const on = $("setAutoLaunch").checked;
+  const r = await api("/settings/autolaunch", { on });
+  if (r.ok) {
+    $("setAutoLaunch").checked = !!r.autoLaunch;
+    $("setOk").textContent = r.autoLaunch
+        ? "On — Realmscry will start with the game." : "Off.";
+  } else {
+    $("setAutoLaunch").checked = !on;
+    $("setOk").textContent = r.error || "Failed.";
+  }
 }
 
 let myAccountName = "";

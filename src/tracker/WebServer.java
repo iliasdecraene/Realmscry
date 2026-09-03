@@ -71,6 +71,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         server.createContext("/guild/", this::serveGuild);
         server.createContext("/account/", this::serveAccount);
         server.createContext("/timeline/like", this::serveTimelineLike);
+        server.createContext("/settings/", this::serveSettings);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
 
@@ -657,6 +658,37 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         } else {
             rsp.addProperty("ok", false);
             rsp.addProperty("error", "unknown route");
+        }
+        byte[] out = rsp.toString().getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.sendResponseHeaders(200, out.length);
+        try (OutputStream os = ex.getResponseBody()) { os.write(out); }
+    }
+
+    private void serveSettings(HttpExchange ex) throws IOException {
+        JsonObject rsp = new JsonObject();
+        String path = ex.getRequestURI().getPath();
+        try {
+            if ("/settings/status".equals(path)) {
+                rsp.addProperty("ok", true);
+                rsp.addProperty("autoLaunchSupported", AutoLaunch.supported());
+                rsp.addProperty("autoLaunch", AutoLaunch.enabled());
+            } else if ("/settings/autolaunch".equals(path)) {
+                JsonObject body = com.google.gson.JsonParser
+                        .parseString(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8))
+                        .getAsJsonObject();
+                boolean on = body.has("on") && body.get("on").getAsBoolean();
+                if (on) AutoLaunch.enable();
+                else AutoLaunch.disable();
+                rsp.addProperty("ok", true);
+                rsp.addProperty("autoLaunch", AutoLaunch.enabled());
+            } else {
+                rsp.addProperty("ok", false);
+                rsp.addProperty("error", "unknown route");
+            }
+        } catch (Exception e) {
+            rsp.addProperty("ok", false);
+            rsp.addProperty("error", e.getMessage() == null ? e.toString() : e.getMessage());
         }
         byte[] out = rsp.toString().getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().set("Content-Type", "application/json");
