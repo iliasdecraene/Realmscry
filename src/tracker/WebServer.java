@@ -564,6 +564,16 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
     /** Dedupe + append; returns false for an already-seen event. */
     private boolean addPartyEvent(JsonObject e) {
         try {
+            // Classify filler in events from members on older versions.
+            if (e.has("items")) {
+                for (var el : e.getAsJsonArray("items")) {
+                    JsonObject it = el.getAsJsonObject();
+                    if (!it.has("minor") && it.has("id")
+                            && GameState.isMinorLoot(it.get("id").getAsInt())) {
+                        it.addProperty("minor", true);
+                    }
+                }
+            }
             String key = e.get("t").getAsString() + "|"
                     + e.get("fromId").getAsString() + "|" + e.get("ts").getAsLong();
             if (!partySeen.add(key)) return false;

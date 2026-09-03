@@ -265,7 +265,34 @@ final class GuildClient {
         if (token.isEmpty()) return err("no account yet");
         String q = "/api/guild/timeline?filter=" + (filter == null ? "all" : filter);
         if (before > 0) q += "&before=" + before;
-        return call(q, "GET", null, true);
+        JsonObject r = call(q, "GET", null, true);
+        stampMinorFlags(r);
+        return r;
+    }
+
+    /**
+     * Events posted before minor-loot flagging existed (any member, any
+     * version) carry no flags — classify them here at read time, where the
+     * game's item data is available, so pots/marks/tokens collapse out of
+     * old guild rows too.
+     */
+    private static void stampMinorFlags(JsonObject r) {
+        try {
+            if (!r.has("events")) return;
+            for (var ev : r.getAsJsonArray("events")) {
+                JsonObject data = ev.getAsJsonObject().has("data")
+                        ? ev.getAsJsonObject().getAsJsonObject("data") : null;
+                if (data == null || !data.has("items")) continue;
+                for (var el : data.getAsJsonArray("items")) {
+                    JsonObject it = el.getAsJsonObject();
+                    if (!it.has("minor") && it.has("id")
+                            && GameState.isMinorLoot(it.get("id").getAsInt())) {
+                        it.addProperty("minor", true);
+                    }
+                }
+            }
+        } catch (Exception ignored) { // display sugar, never fatal
+        }
     }
 
     JsonObject like(long eventId, boolean on) {
