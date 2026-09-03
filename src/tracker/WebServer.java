@@ -70,6 +70,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         server.createContext("/party/leave", this::servePartyLeave);
         server.createContext("/guild/", this::serveGuild);
         server.createContext("/account/", this::serveAccount);
+        server.createContext("/timeline/like", this::serveTimelineLike);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
 
@@ -661,6 +662,60 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         ex.getResponseHeaders().set("Content-Type", "application/json");
         ex.sendResponseHeaders(200, out.length);
         try (OutputStream os = ex.getResponseBody()) { os.write(out); }
+    }
+
+    /**
+     * Heart on a local timeline entry (own loot/death, addressed by ts).
+     * Persisted in the entry itself ("liked":true, full history rewrite —
+     * cheap at our cap) and mirrored to the guild timeline when member.
+     */
+    private void serveTimelineLike(HttpExchange ex) throws IOException {
+        JsonObject rsp = new JsonObject();
+        try {
+            JsonObject body = com.google.gson.JsonParser
+                    .parseString(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8))
+                    .getAsJsonObject();
+            long ts = body.get("ts").getAsLong();
+            boolean on = body.has("on") && body.get("on").getAsBoolean();
+            boolean found = false;
+            synchronized (lootLog) {
+                for (JsonObject o : lootLog) {
+                    if (o.has("ts") && o.get("ts").getAsLong() == ts) {
+                        if (on) o.addProperty("liked", true);
+                        else o.remove("liked");
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) rewriteLootHistory();
+            }
+            if (found) {
+                GuildClient g = guild;
+                if (g != null) g.likeByTs(ts, on);
+            }
+            rsp.addProperty("ok", found);
+            if (!found) rsp.addProperty("error", "entry not found");
+            rsp.addProperty("liked", on);
+        } catch (Exception e) {
+            rsp.addProperty("ok", false);
+            rsp.addProperty("error", "bad request");
+        }
+        byte[] out = rsp.toString().getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.sendResponseHeaders(200, out.length);
+        try (OutputStream os = ex.getResponseBody()) { os.write(out); }
+    }
+
+    /** Rewrite the whole timeline history (oldest first) — likes changed. */
+    private void rewriteLootHistory() {
+        try {
+            StringBuilder sb = new StringBuilder();
+            var it = lootLog.descendingIterator();
+            while (it.hasNext()) sb.append(it.next().toString()).append(System.lineSeparator());
+            Files.writeString(LOOT_HISTORY, sb.toString(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            System.err.println("[Web] Could not rewrite timeline history: " + e);
+        }
     }
 
     @Override

@@ -50,7 +50,7 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/" || url.pathname === "") {
-      return new Response("Realmscry relay v5 — see github.com/iliasdecraene/Realmscry\n");
+      return new Response("Realmscry relay v6 — see github.com/iliasdecraene/Realmscry\n");
     }
     if (url.pathname === "/party" && req.method === "POST") {
       return json({ code: genCode() });
@@ -389,6 +389,26 @@ export class Registry {
           r.mine = r.account === acc.id;
         }
         return json({ ok: true, accountId: acc.id, events: rows });
+      }
+
+      // Like one of MY OWN events addressed by its original timestamp —
+      // lets the tracker's local timeline hearts reach the guild without
+      // the client having to remember server event ids.
+      if (path === "/api/guild/likeByTs" && req.method === "POST") {
+        const g = this.myGuild(acc.id);
+        if (!g) return json({ ok: false, error: "not in a guild" });
+        const ev = this.one(
+            "SELECT id FROM events WHERE guild = ? AND account = ? AND ts = ? ORDER BY id DESC",
+            g.id, acc.id, Number(body.ts) || 0);
+        if (!ev) return json({ ok: false, error: "event not in guild timeline" });
+        if (body.on) {
+          this.sql.exec("INSERT OR IGNORE INTO likes(event, account, ts) VALUES(?,?,?)",
+              ev.id, acc.id, Date.now());
+        } else {
+          this.sql.exec("DELETE FROM likes WHERE event = ? AND account = ?", ev.id, acc.id);
+        }
+        const likes = this.one("SELECT COUNT(*) c FROM likes WHERE event = ?", ev.id).c;
+        return json({ ok: true, eventId: ev.id, likes });
       }
 
       if (path === "/api/guild/like" && req.method === "POST") {

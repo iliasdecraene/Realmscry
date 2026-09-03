@@ -284,6 +284,15 @@ final class GuildClient {
         }
     }
 
+    /** Fire-and-forget: mirror a local timeline heart onto our guild event. */
+    void likeByTs(long ts, boolean on) {
+        if (!inGuild || token.isEmpty()) return;
+        JsonObject b = new JsonObject();
+        b.addProperty("ts", ts);
+        b.addProperty("on", on);
+        exec.execute(() -> call("/api/guild/likeByTs", "POST", b, true));
+    }
+
     /** Fire-and-forget: publish one of our events to the guild timeline. */
     void postEvent(String type, JsonObject data, long ts) {
         if (!inGuild || token.isEmpty()) return;

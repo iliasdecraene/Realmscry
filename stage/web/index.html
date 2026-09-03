@@ -536,6 +536,7 @@
   }
   .heart:hover { background: var(--surface-2); }
   .heart.liked { color: #f06292; }
+  .tl-heart { align-self: flex-start; margin-top: 2px; }
   .g-ev .loot-row, .g-ev .death-row { margin: 2px 0 6px; }
 
   /* ---- Your recent bosses (collapsible personal history) ---- */
@@ -609,8 +610,9 @@
         <div class="card-head">
           <h2>Timeline</h2>
           <div class="seg" id="tlSeg">
-            <button class="on" onclick="setTlFilter('all')">All</button>
-            <button onclick="setTlFilter('deaths')">Deaths</button>
+            <button class="on" data-f="all" onclick="setTlFilter('all')">All</button>
+            <button data-f="liked" onclick="setTlFilter('liked')">Liked</button>
+            <button data-f="deaths" onclick="setTlFilter('deaths')">Deaths</button>
           </div>
         </div>
         <div class="shiny-toast" id="shinyToast"></div>
@@ -730,6 +732,7 @@ const deathRow = (l, plain) => {
         <div class="d-badges">
           ${l.maxed >= 0 ? `<span class="d-badge${l.maxed >= 8 ? " maxed8" : ""}">${l.maxed}/8</span>` : ""}
           ${l.fame > 0 ? `<span class="d-badge">${fmt(l.fame)} fame</span>` : ""}
+          ${plain ? "" : tlHeart(l)}
         </div>
       </div>
       <div class="d-gear">${slots(l.equip)}${carried.length
@@ -762,7 +765,7 @@ const lootRow = (l, plain) => {
           }</span>${esc(i.name)}</span>`; }).join("")}</div>
         <div class="loot-meta">${l.from && l.fromId !== party.id
           ? `<span class="from-chip"${c ? ` style="background:${c}"` : ""}>${esc(l.from)}</span> · ` : ""}${esc(l.map || "")} · ${ago(l.ts)}</div>
-      </div>
+      </div>${plain ? "" : tlHeart(l)}
     </div>`;
 };
 
@@ -777,15 +780,30 @@ function combinedLoot() {
     // "your deaths": own entries only
     return all.filter(l => (l.type === "death" || l.t === "death") && !l.from);
   }
+  if (tlFilter === "liked") {
+    return all.filter(l => l.liked);
+  }
   return all;
 }
 
 function setTlFilter(f) {
   tlFilter = f;
-  [...$("tlSeg").children].forEach((b, i) =>
-      b.classList.toggle("on", (i === 0) === (f === "all")));
+  [...$("tlSeg").children].forEach(b =>
+      b.classList.toggle("on", b.dataset.f === f));
   renderLoot();
 }
+
+// Heart on an own timeline entry: persists locally and (when in a guild)
+// mirrors onto our guild event so it shows in the guild's Liked list.
+async function tlLike(ts, on) {
+  const e = lootLog.find(l => l.ts === ts);
+  if (e) { if (on) e.liked = true; else delete e.liked; }
+  renderLoot();
+  try { await api("/timeline/like", { ts, on }); } catch (err) {}
+}
+const tlHeart = l => l.from ? "" : `
+  <button class="heart tl-heart${l.liked ? " liked" : ""}"
+    onclick="tlLike(${l.ts}, ${l.liked ? "false" : "true"})">${l.liked ? "♥" : "♡"}</button>`;
 
 const isDeath = l => l.type === "death" || l.t === "death";
 
