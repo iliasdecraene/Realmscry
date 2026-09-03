@@ -50,7 +50,7 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/" || url.pathname === "") {
-      return new Response("Realmscry relay v6 — see github.com/iliasdecraene/Realmscry\n");
+      return new Response("Realmscry relay v7 — see github.com/iliasdecraene/Realmscry\n");
     }
     if (url.pathname === "/party" && req.method === "POST") {
       return json({ code: genCode() });
@@ -393,13 +393,24 @@ export class Registry {
 
       // Like one of MY OWN events addressed by its original timestamp —
       // lets the tracker's local timeline hearts reach the guild without
-      // the client having to remember server event ids.
+      // the client having to remember server event ids. If the event was
+      // never in the guild timeline (it predates membership) and the
+      // client supplied its data, share it now with its original ts.
       if (path === "/api/guild/likeByTs" && req.method === "POST") {
         const g = this.myGuild(acc.id);
         if (!g) return json({ ok: false, error: "not in a guild" });
-        const ev = this.one(
+        const ts = Number(body.ts) || 0;
+        let ev = this.one(
             "SELECT id FROM events WHERE guild = ? AND account = ? AND ts = ? ORDER BY id DESC",
-            g.id, acc.id, Number(body.ts) || 0);
+            g.id, acc.id, ts);
+        if (!ev && body.on && body.data && ts > 0) {
+          const type = body.type === "death" ? "death" : "loot";
+          const data = JSON.stringify(body.data);
+          if (data.length > EVENT_DATA_MAX) return json({ ok: false, error: "event too large" });
+          this.sql.exec("INSERT INTO events(guild, account, type, ts, data) VALUES(?,?,?,?,?)",
+              g.id, acc.id, type, ts, data);
+          ev = this.one("SELECT last_insert_rowid() id");
+        }
         if (!ev) return json({ ok: false, error: "event not in guild timeline" });
         if (body.on) {
           this.sql.exec("INSERT OR IGNORE INTO likes(event, account, ts) VALUES(?,?,?)",

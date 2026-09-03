@@ -677,21 +677,27 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
                     .getAsJsonObject();
             long ts = body.get("ts").getAsLong();
             boolean on = body.has("on") && body.get("on").getAsBoolean();
-            boolean found = false;
+            JsonObject entry = null;
             synchronized (lootLog) {
                 for (JsonObject o : lootLog) {
                     if (o.has("ts") && o.get("ts").getAsLong() == ts) {
                         if (on) o.addProperty("liked", true);
                         else o.remove("liked");
-                        found = true;
+                        entry = o;
                         break;
                     }
                 }
-                if (found) rewriteLootHistory();
+                if (entry != null) rewriteLootHistory();
             }
+            boolean found = entry != null;
             if (found) {
                 GuildClient g = guild;
-                if (g != null) g.likeByTs(ts, on);
+                if (g != null) {
+                    JsonObject share = entry.deepCopy();
+                    share.remove("liked");
+                    String type = entry.has("type") ? entry.get("type").getAsString() : "loot";
+                    g.likeByTs(ts, on, share, type);
+                }
             }
             rsp.addProperty("ok", found);
             if (!found) rsp.addProperty("error", "entry not found");

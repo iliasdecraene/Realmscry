@@ -1216,6 +1216,7 @@ async function guildLeave() {
   refreshGuild();
 }
 async function guildLike(eventId, on) {
+  const e0 = guild.events.find(x => x.id === eventId);
   const r = await api("/guild/like", { eventId, on });
   if (r.ok) {
     const e = guild.events.find(x => x.id === eventId);
@@ -1224,6 +1225,9 @@ async function guildLike(eventId, on) {
       guild.events = guild.events.filter(x => x.id !== eventId || x.likes > 0);
     }
     renderGuild();
+    // Liking MY OWN event in the guild also hearts it in my tracker
+    // timeline; other members' events never touch the local timeline.
+    if (e0 && e0.mine && e0.data && e0.data.ts) tlLike(e0.data.ts, on);
   }
 }
 

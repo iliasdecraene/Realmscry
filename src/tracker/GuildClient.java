@@ -284,12 +284,20 @@ final class GuildClient {
         }
     }
 
-    /** Fire-and-forget: mirror a local timeline heart onto our guild event. */
-    void likeByTs(long ts, boolean on) {
+    /**
+     * Fire-and-forget: mirror a local timeline heart onto our guild event.
+     * shareData (the full local entry) lets the backend share-then-like an
+     * event that predates our guild membership.
+     */
+    void likeByTs(long ts, boolean on, JsonObject shareData, String type) {
         if (!inGuild || token.isEmpty()) return;
         JsonObject b = new JsonObject();
         b.addProperty("ts", ts);
         b.addProperty("on", on);
+        if (on && shareData != null) {
+            b.add("data", shareData);
+            b.addProperty("type", type);
+        }
         exec.execute(() -> call("/api/guild/likeByTs", "POST", b, true));
     }
 
