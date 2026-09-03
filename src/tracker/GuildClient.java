@@ -45,6 +45,7 @@ final class GuildClient {
     private volatile String accountId = "", token = "";
     private volatile boolean inGuild;
     private volatile String guildName = "";
+    private volatile String displayName = ""; // user-chosen, from the Account page
 
     // Profile sources (wired from GameState) + last pushed values.
     private volatile java.util.function.IntSupplier iconSrc = () -> 0;
@@ -64,6 +65,7 @@ final class GuildClient {
         token = p.getProperty("token", "");
         inGuild = Boolean.parseBoolean(p.getProperty("inGuild", "false"));
         guildName = p.getProperty("guildName", "");
+        displayName = p.getProperty("displayName", "");
         // Keep the backend profile in sync with what the sniffer learns.
         exec.scheduleAtFixedRate(this::syncProfile, 60, 120, TimeUnit.SECONDS);
     }
@@ -78,6 +80,30 @@ final class GuildClient {
 
     boolean inGuild() { return inGuild; }
     String guildName() { return guildName; }
+    String displayName() { return displayName; }
+    String detectedIgn() { return ignSrc.get(); }
+
+    /** Set from the Account page; pushed to the backend right away. */
+    JsonObject setDisplayName(String name) {
+        name = name == null ? "" : name.trim();
+        if (name.length() > 24) name = name.substring(0, 24);
+        displayName = name;
+        save();
+        sentProfile = null; // force a resend
+        JsonObject b = new JsonObject();
+        b.addProperty("ign", ignSrc.get());
+        b.addProperty("icon", iconSrc.getAsInt());
+        b.addProperty("gameAccount", gameAccSrc.get());
+        b.addProperty("name", name);
+        JsonObject r = call("/api/profile", "POST", b, true);
+        if (r.has("ok") && r.get("ok").getAsBoolean()) {
+            JsonObject out = new JsonObject();
+            out.addProperty("ok", true);
+            out.addProperty("name", displayName);
+            return out;
+        }
+        return r;
+    }
 
     private void save() {
         try {
@@ -86,6 +112,7 @@ final class GuildClient {
             p.setProperty("token", token);
             p.setProperty("inGuild", String.valueOf(inGuild));
             p.setProperty("guildName", guildName);
+            p.setProperty("displayName", displayName);
             try (var w = Files.newBufferedWriter(CONFIG, StandardCharsets.UTF_8)) {
                 p.store(w, "Realmscry account (the token IS the credential - do not share)");
             }
@@ -175,13 +202,14 @@ final class GuildClient {
             String ign = ignSrc.get();
             int icon = iconSrc.getAsInt();
             String ga = gameAccSrc.get();
-            if (ign.isEmpty() && icon == 0) return;
-            String sig = ign + "|" + icon + "|" + ga;
+            if (ign.isEmpty() && icon == 0 && displayName.isEmpty()) return;
+            String sig = ign + "|" + icon + "|" + ga + "|" + displayName;
             if (sig.equals(sentProfile)) return;
             JsonObject b = new JsonObject();
             b.addProperty("ign", ign);
             b.addProperty("icon", icon);
             b.addProperty("gameAccount", ga);
+            b.addProperty("name", displayName);
             JsonObject r = call("/api/profile", "POST", b, true);
             if (r.has("ok") && r.get("ok").getAsBoolean()) sentProfile = sig;
         } catch (Throwable ignored) {

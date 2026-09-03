@@ -50,7 +50,7 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/" || url.pathname === "") {
-      return new Response("Realmscry relay v4 — see github.com/iliasdecraene/Realmscry\n");
+      return new Response("Realmscry relay v5 — see github.com/iliasdecraene/Realmscry\n");
     }
     if (url.pathname === "/party" && req.method === "POST") {
       return json({ code: genCode() });
@@ -240,6 +240,9 @@ export class Registry {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS likes(
       event INTEGER NOT NULL, account TEXT NOT NULL, ts INTEGER,
       PRIMARY KEY(event, account))`);
+    // v1.4.1: user-chosen display name (ign is only auto-detected at a map
+    // join, so fresh accounts showed as "Unknown").
+    try { this.sql.exec("ALTER TABLE accounts ADD COLUMN name TEXT DEFAULT ''"); } catch {}
   }
 
   one(query, ...args) {
@@ -284,10 +287,12 @@ export class Registry {
 
       if (path === "/api/profile" && req.method === "POST") {
         this.sql.exec(
-          "UPDATE accounts SET ign = ?, icon = ?, game_account = ? WHERE id = ?",
+          "UPDATE accounts SET ign = ?, icon = ?, game_account = ?, name = ? WHERE id = ?",
           String(body.ign || acc.ign).slice(0, 24),
           Number(body.icon) || acc.icon,
-          String(body.gameAccount || acc.game_account).slice(0, 64), acc.id);
+          String(body.gameAccount || acc.game_account).slice(0, 64),
+          String(body.name !== undefined ? body.name : acc.name || "").slice(0, 24),
+          acc.id);
         return json({ ok: true });
       }
 
@@ -338,7 +343,7 @@ export class Registry {
         const g = this.myGuild(acc.id);
         if (!g) return json({ ok: true, inGuild: false, accountId: acc.id });
         const members = this.sql.exec(
-            "SELECT a.id, a.ign, a.icon, m.role FROM members m " +
+            "SELECT a.id, a.ign, a.icon, a.name, m.role FROM members m " +
             "JOIN accounts a ON a.id = m.account WHERE m.guild = ? ORDER BY m.joined",
             g.id).toArray();
         return json({ ok: true, inGuild: true, guildId: g.id, name: g.name,
@@ -373,7 +378,7 @@ export class Registry {
         if (filter === "deaths") where += " AND e.type = 'death'";
         if (filter === "liked") where += " AND EXISTS (SELECT 1 FROM likes l WHERE l.event = e.id)";
         const rows = this.sql.exec(
-            "SELECT e.id, e.account, e.type, e.ts, e.data, a.ign, a.icon, " +
+            "SELECT e.id, e.account, e.type, e.ts, e.data, a.ign, a.icon, a.name dname, " +
             "(SELECT COUNT(*) FROM likes l WHERE l.event = e.id) likes, " +
             "EXISTS (SELECT 1 FROM likes l WHERE l.event = e.id AND l.account = ?3) likedByMe " +
             "FROM events e JOIN accounts a ON a.id = e.account " +

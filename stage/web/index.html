@@ -30,6 +30,7 @@
     --live:      #199e70;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  [hidden] { display: none !important; } /* beats display:flex/grid rules */
   html, body { height: 100%; }
   body {
     background: var(--surface-0);
@@ -83,7 +84,7 @@
   }
 
   /* ---- Party ---- */
-  .party-chip {
+  .acct-btn {
     margin-left: auto; margin-right: 16px;
     display: inline-flex; align-items: center; gap: 7px;
     font-size: 12px; font-weight: 600;
@@ -91,9 +92,30 @@
     background: var(--surface-2); border: 1px solid var(--border);
     color: var(--text-secondary); cursor: pointer; user-select: none;
   }
-  .party-chip:hover { border-color: var(--text-muted); }
-  .party-chip.in { color: var(--live); border-color: var(--live); }
-  .party-chip.off { color: var(--text-muted); }
+  .acct-btn:hover { border-color: var(--text-muted); }
+  .acct-pop {
+    position: absolute; top: 54px; right: 120px; z-index: 20; width: 170px;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.5);
+  }
+  .acct-pop button {
+    display: block; width: 100%; text-align: left;
+    border: none; background: none; color: var(--text-secondary);
+    font: inherit; font-size: 13px; padding: 8px 12px;
+    border-radius: 6px; cursor: pointer;
+  }
+  .acct-pop button:hover { background: var(--surface-2); color: var(--text-primary); }
+  .acct-pop button:disabled { color: var(--text-muted); cursor: default; }
+  .acct-pop button:disabled:hover { background: none; }
+  .acct-view { display: flex; justify-content: center; padding-top: 30px; }
+  .acct-card { width: 100%; max-width: 460px; }
+  .acct-card input {
+    width: 100%; margin: 10px 0; padding: 9px 11px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text-primary); font: inherit; font-size: 14px;
+  }
+  .acct-ok { color: var(--live); font-size: 12px; margin-top: 8px; min-height: 15px; }
   .party-pop {
     position: absolute; top: 54px; right: 0; z-index: 20; width: 270px;
     background: var(--surface-1); border: 1px solid var(--border);
@@ -170,13 +192,39 @@
   #conn.live { color: var(--text-secondary); }
 
   .grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    display: grid; grid-template-columns: 128px 1fr 1fr; gap: 20px;
     flex: 1; min-height: 0; /* cards stretch to the bottom of the window */
   }
-  @media (max-width: 780px) {
+  @media (max-width: 900px) {
     .grid { grid-template-columns: 1fr; flex: none; }
     .wrap { height: auto; min-height: 100%; }
     #loot { max-height: 70vh; }
+    .party-side { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+  }
+
+  /* ---- Party sidebar (tracker view only) ---- */
+  .party-side {
+    display: flex; flex-direction: column; gap: 10px;
+    position: relative; min-height: 0;
+  }
+  .party-btn {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface-1); color: var(--text-secondary);
+    font: inherit; font-size: 12.5px; font-weight: 650;
+    padding: 10px 8px; cursor: pointer; text-align: center;
+  }
+  .party-btn:hover { border-color: var(--text-muted); }
+  .party-btn.in { color: var(--live); border-color: var(--live); }
+  .party-side .party-pop { top: 44px; left: 0; right: auto; width: 260px; }
+  .party-side .pm-tile { width: 100%; }
+  #partyTiles {
+    display: flex; flex-direction: column; gap: 8px;
+    overflow-y: auto; min-height: 0;
+  }
+  @media (max-width: 900px) { #partyTiles { flex-direction: row; flex-wrap: wrap; } }
+  @media (max-width: 900px) {
+    .party-side .party-btn { width: auto; padding: 10px 16px; }
+    .party-side .pm-tile { width: auto; }
   }
 
   .card {
@@ -542,14 +590,21 @@
       <button id="navGuild" onclick="setView('guild')">Guild</button>
     </nav>
     <span id="map"></span>
-    <span class="party-chip off" id="partyChip" onclick="togglePartyPop()">Party</span>
+    <span class="acct-btn" onclick="toggleAcctPop()">Account ▾</span>
     <span id="conn"><span class="dot"></span><span id="connText">connecting…</span></span>
-    <div class="party-pop" id="partyPop" hidden></div>
+    <div class="acct-pop" id="acctPop" hidden>
+      <button onclick="toggleAcctPop();setView('account')">Account</button>
+      <button disabled title="Coming soon">Settings — soon</button>
+    </div>
   </header>
 
   <div class="grid" id="viewTracker">
+    <div class="party-side">
+      <button class="party-btn" id="partyChip" onclick="togglePartyPop()">Party</button>
+      <div class="party-pop" id="partyPop" hidden></div>
+      <div id="partyTiles"></div>
+    </div>
     <div class="col-left">
-      <section class="card roster-card" id="rosterCard" hidden></section>
       <section class="card loot-card">
         <div class="card-head">
           <h2>Timeline</h2>
@@ -570,6 +625,19 @@
   </div>
 
   <div class="guild-view" id="viewGuild" hidden></div>
+
+  <div class="acct-view" id="viewAccount" hidden>
+    <section class="card acct-card">
+      <h2>Account</h2>
+      <div class="g-hint">The name shown to your guild and on your shared
+        drops and deaths. Your in-game name is detected automatically once
+        you enter a map — this overrides it.</div>
+      <input id="acctName" maxlength="24" placeholder="Display name">
+      <button class="g-btn" onclick="saveAcctName()">Save</button>
+      <div class="acct-ok" id="acctOk"></div>
+      <div class="g-hint" id="acctIgn"></div>
+    </section>
+  </div>
 </div>
 
 <script>
@@ -916,16 +984,14 @@ function setMap(name) {
   $("map").textContent = name || "";
 }
 
-// ---- Party UI ----
+// ---- Party UI (lives in the sidebar left of the timeline) ----
 function renderRoster() {
-  const card = $("rosterCard");
+  const box = $("partyTiles");
   if (!party.joined || !party.members.length) {
-    card.hidden = true;
-    card.innerHTML = "";
+    box.innerHTML = "";
     return;
   }
-  card.hidden = false;
-  card.innerHTML = '<h2>Party</h2><div class="roster">' + party.members.map(m => {
+  box.innerHTML = party.members.map(m => {
     const me = m.id === party.id;
     const c = me ? YOU_COLOR : memberColor(m.id);
     return `<div class="pm-tile" style="border-color:${c}">
@@ -934,17 +1000,17 @@ function renderRoster() {
       <span class="pm-name" style="color:${c}">${esc(m.name)}</span>
       ${me ? '<span class="pm-you">YOU</span>' : ""}
     </div>`;
-  }).join("") + "</div>";
+  }).join("");
 }
 
 function renderParty() {
   renderRoster();
   const chip = $("partyChip");
   if (party.joined) {
-    chip.className = "party-chip " + (party.connected ? "in" : "off");
-    chip.textContent = `⬡ ${party.code} · ${party.members.length || "…"}`;
+    chip.className = "party-btn" + (party.connected ? " in" : "");
+    chip.textContent = `⬡ ${party.code}`;
   } else {
-    chip.className = "party-chip off";
+    chip.className = "party-btn";
     chip.textContent = "Party";
   }
   const pop = $("partyPop");
@@ -954,7 +1020,7 @@ function renderParty() {
     pop.innerHTML = `
       <h3>Join a party</h3>
       <input id="pName" maxlength="24" placeholder="Your name"
-        value="${esc(localStorage.getItem("partyName") || party.name || "")}">
+        value="${esc(localStorage.getItem("partyName") || myAccountName || party.name || "")}">
       <input id="pCode" maxlength="12" placeholder="Party code (empty = new party)"
         style="text-transform:uppercase">
       <div class="party-btns">
@@ -1035,14 +1101,44 @@ function applyPartyFrame(f) {
   }
 }
 
-// ---- View switching + Guild ----
+// ---- View switching + Account + Guild ----
 function setView(v) {
   view = v;
   $("navTracker").classList.toggle("on", v === "tracker");
   $("navGuild").classList.toggle("on", v === "guild");
   $("viewTracker").hidden = v !== "tracker";
   $("viewGuild").hidden = v !== "guild";
+  $("viewAccount").hidden = v !== "account";
   if (v === "guild") refreshGuild();
+  if (v === "account") loadAccount();
+}
+
+let myAccountName = "";
+function toggleAcctPop() {
+  $("acctPop").hidden = !$("acctPop").hidden;
+}
+async function loadAccount() {
+  try {
+    const s = await api("/account/status");
+    if (s.ok) {
+      myAccountName = s.name || "";
+      $("acctName").value = myAccountName;
+      $("acctIgn").textContent = s.ign
+          ? "Detected in game: " + s.ign : "In-game name not detected yet (enter a map).";
+      $("acctOk").textContent = "";
+    }
+  } catch (e) {}
+}
+async function saveAcctName() {
+  const name = $("acctName").value.trim();
+  const r = await api("/account/name", { name });
+  if (r.ok) {
+    myAccountName = r.name || name;
+    $("acctOk").textContent = "Saved.";
+    setTimeout(() => { $("acctOk").textContent = ""; }, 3000);
+  } else {
+    $("acctOk").textContent = r.error || "Could not save.";
+  }
 }
 
 async function api(path, body) {
@@ -1121,7 +1217,7 @@ function guildEventHtml(e) {
     <div class="g-ev">
       <div class="g-ev-head">
         ${e.icon > 0 ? `<img src="/icon/${e.icon}" alt="" onerror="this.remove()">` : ""}
-        <span class="gname">${esc(e.ign || "Unknown")}${e.mine ? " (you)" : ""}</span>
+        <span class="gname">${esc(e.dname || e.ign || "Unknown")}${e.mine ? " (you)" : ""}</span>
         <span class="gago">${ago(e.ts)}</span>
         <button class="heart${e.likedByMe ? " liked" : ""}"
           onclick="guildLike(${e.id}, ${e.likedByMe ? "false" : "true"})">
@@ -1161,7 +1257,7 @@ function renderGuild() {
     <span class="g-member">
       ${m.icon > 0 ? `<img src="/icon/${m.icon}" alt="" onerror="this.remove()">` : ""}
       ${m.role === "owner" ? '<span class="crown" title="Owner">♛</span>' : ""}
-      ${esc(m.ign || "Unknown")}${m.id === guild.accountId ? " (you)" : ""}
+      ${esc(m.name || m.ign || "Unknown")}${m.id === guild.accountId ? " (you)" : ""}
     </span>`).join("");
   const evs = guild.events.length
       ? guild.events.map(guildEventHtml).join("")
@@ -1249,6 +1345,7 @@ function connect() {
   es.addEventListener("map", e => setMap(JSON.parse(e.data).map));
 }
 connect();
+loadAccount(); // prefills the account page + party-name suggestions
 setInterval(() => {
   if (view === "guild") { refreshGuild(); return; }
   renderLoot();
