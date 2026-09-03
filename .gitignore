@@ -16,7 +16,6 @@ account.properties
 sound/
 
 # internal dev docs & scratch (kept local on purpose)
-CLAUDE.md
 MEMORY.md
 docs/
 References/
