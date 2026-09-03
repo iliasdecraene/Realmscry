@@ -49,7 +49,7 @@ import java.util.jar.JarFile;
 final class Updater {
 
     /** Bump on every release — must match the git tag (tag "v" + VERSION). */
-    static final String VERSION = "1.6.1";
+    static final String VERSION = "1.6.2";
 
     /** "user/repo" on GitHub. Empty disables self-update entirely. */
     private static final String DEFAULT_REPO = "iliasdecraene/Realmscry";

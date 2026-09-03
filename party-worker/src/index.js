@@ -50,7 +50,7 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/" || url.pathname === "") {
-      return new Response("Realmscry relay v7 — see github.com/iliasdecraene/Realmscry\n");
+      return new Response("Realmscry relay v8 — see github.com/iliasdecraene/Realmscry\n");
     }
     if (url.pathname === "/party" && req.method === "POST") {
       return json({ code: genCode() });
@@ -372,9 +372,12 @@ export class Registry {
         const g = this.myGuild(acc.id);
         if (!g) return json({ ok: false, error: "not in a guild" });
         const filter = url.searchParams.get("filter") || "all";
+        // Ordered by when the event HAPPENED (ts), not when it reached the
+        // guild — a share-on-like of an old drop slots into its real place.
+        // `before` paginates on ts accordingly.
         const before = Number(url.searchParams.get("before")) || Number.MAX_SAFE_INTEGER;
         const limit = Math.min(100, Number(url.searchParams.get("limit")) || 50);
-        let where = "e.guild = ?1 AND e.id < ?2";
+        let where = "e.guild = ?1 AND e.ts < ?2";
         if (filter === "deaths") where += " AND e.type = 'death'";
         if (filter === "liked") where += " AND EXISTS (SELECT 1 FROM likes l WHERE l.event = e.id)";
         const rows = this.sql.exec(
@@ -382,7 +385,7 @@ export class Registry {
             "(SELECT COUNT(*) FROM likes l WHERE l.event = e.id) likes, " +
             "EXISTS (SELECT 1 FROM likes l WHERE l.event = e.id AND l.account = ?3) likedByMe " +
             "FROM events e JOIN accounts a ON a.id = e.account " +
-            "WHERE " + where + " ORDER BY e.id DESC LIMIT ?4",
+            "WHERE " + where + " ORDER BY e.ts DESC, e.id DESC LIMIT ?4",
             g.id, before, acc.id, limit).toArray();
         for (const r of rows) {
           try { r.data = JSON.parse(r.data); } catch { r.data = {}; }

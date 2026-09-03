@@ -406,41 +406,34 @@ final class OverlayManager {
         g.fillRoundRect(17, 15, 8, 8, 3, 3);
         g.setColor(SECONDARY);
         g.drawString(tier, 29, 23);
-        // items: sprites + names
+        // items: sprites only — no names (the sprite IS the news)
         int cx = 10;
-        int cy = 32;
         List<JsonObject> items = shownItems(e);
-        StringBuilder names = new StringBuilder();
-        for (int i = 0; i < items.size(); i++) {
-            if (i < 3) cx = drawIcon(g, items.get(i).has("id") ? items.get(i).get("id").getAsInt() : 0, cx, cy, 20);
-            if (names.length() > 0) names.append(", ");
-            names.append(str(items.get(i), "name", "?"));
+        for (int i = 0; i < items.size() && i < 9; i++) {
+            cx = drawIcon(g, items.get(i).has("id") ? items.get(i).get("id").getAsInt() : 0, cx, 32, 24) + 2;
         }
-        g.setFont(MAIN);
-        g.setColor(shiny ? CYAN : TEXT);
-        g.drawString(trim(g, names.toString(), UNIT_W - cx - 16), cx + 4, cy + 15);
         // meta right of the chip
         g.setFont(SUB);
         g.setColor(MUTED);
         g.drawString(trim(g, str(e, "map", "") + " · " + ago(e), UNIT_W - chipW - 30), chipW + 20, 23);
     }
 
-    /** Death card matching the web style; x0 = left content offset. */
+    /** Death: visuals only — skull, big skin sprite, class chip, badges. */
     private void paintDeathRow(Graphics2D g, JsonObject e, int x0) {
         bg(g, TL_H, DEATH_BG, DEATH_BORDER);
-        g.setFont(MAIN);
+        g.setFont(new Font("Segoe UI", Font.BOLD, 22));
         g.setColor(RED);
-        g.drawString("☠", x0, 26);
-        int cx = drawIcon(g, e.has("icon") ? e.get("icon").getAsInt() : 0, x0 + 18, 10, 22);
-        g.setColor(TEXT);
-        String name = str(e, "name", "Unknown");
-        g.drawString(trim(g, name, 130), cx + 4, 22);
-        g.setFont(SUB);
-        g.setColor(SECONDARY);
-        g.drawString(trim(g, "killed by ", 70), cx + 4, 38);
-        int kx = cx + 4 + g.getFontMetrics().stringWidth("killed by ");
-        g.setColor(RED);
-        g.drawString(trim(g, str(e, "killedBy", "?"), UNIT_W - kx - 60), kx, 38);
+        g.drawString("☠", x0, 40);
+        int cx = drawIcon(g, e.has("icon") ? e.get("icon").getAsInt() : 0, x0 + 26, 14, 34) + 4;
+        String cls = str(e, "className", "");
+        if (!cls.isEmpty()) {
+            g.setFont(CHIP);
+            int cw = g.getFontMetrics().stringWidth(cls) + 14;
+            g.setColor(SURFACE2);
+            g.fillRoundRect(cx, 22, cw, 18, 9, 9);
+            g.setColor(SECONDARY);
+            g.drawString(cls, cx + 7, 35);
+        }
         int maxed = e.has("maxed") ? e.get("maxed").getAsInt() : -1;
         if (maxed >= 0) {
             g.setFont(CHIP);
@@ -453,7 +446,8 @@ final class OverlayManager {
         }
         g.setFont(SUB);
         g.setColor(MUTED);
-        g.drawString(trim(g, str(e, "map", "") + " · " + ago(e), 140), UNIT_W - 150, TL_H - 10);
+        String meta = str(e, "map", "") + " · " + ago(e);
+        g.drawString(trim(g, meta, 150), UNIT_W - 12 - Math.min(150, g.getFontMetrics().stringWidth(meta)), TL_H - 10);
     }
 
     /** Guild box: big member avatar hard left, event info to the right. */
@@ -488,24 +482,26 @@ final class OverlayManager {
         String agoS = ago(ev);
         g.drawString(agoS, UNIT_W - 12 - g.getFontMetrics().stringWidth(agoS), 24);
         if (death) {
-            g.setFont(SUB);
-            g.setColor(SECONDARY);
-            String cause = "☠ died to " + str(data, "killedBy", "?");
-            int maxed = data.has("maxed") ? data.get("maxed").getAsInt() : -1;
-            if (maxed >= 0) cause += "  ·  " + maxed + "/8";
-            g.drawString(trim(g, cause, UNIT_W - x0 - 12), x0, 44);
+            g.setFont(new Font("Segoe UI", Font.BOLD, 16));
+            g.setColor(RED);
+            g.drawString("☠", x0, 48);
+            int cx = drawIcon(g, data.has("icon") ? data.get("icon").getAsInt() : 0, x0 + 20, 30, 24) + 2;
+            String cls = str(data, "className", "");
+            if (!cls.isEmpty()) {
+                g.setFont(CHIP);
+                int cw = g.getFontMetrics().stringWidth(cls) + 14;
+                g.setColor(SURFACE2);
+                g.fillRoundRect(cx, 33, cw, 18, 9, 9);
+                g.setColor(SECONDARY);
+                g.drawString(cls, cx + 7, 46);
+            }
         } else {
+            // sprites only, no item names
             int cx = x0;
             List<JsonObject> items = shownItems(data);
-            StringBuilder names = new StringBuilder();
-            for (int i = 0; i < items.size(); i++) {
-                if (i < 2) cx = drawIcon(g, items.get(i).has("id") ? items.get(i).get("id").getAsInt() : 0, cx, 32, 18);
-                if (names.length() > 0) names.append(", ");
-                names.append(str(items.get(i), "name", "?"));
+            for (int i = 0; i < items.size() && i < 7; i++) {
+                cx = drawIcon(g, items.get(i).has("id") ? items.get(i).get("id").getAsInt() : 0, cx, 28, 24) + 2;
             }
-            g.setFont(new Font("Segoe UI", Font.BOLD, 12));
-            g.setColor(shiny ? CYAN : TEXT);
-            g.drawString(trim(g, names.toString(), UNIT_W - cx - 16), cx + 4, 45);
         }
         g.setFont(SUB);
         g.setColor(MUTED);

@@ -305,8 +305,46 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
             }
             while (lootLog.size() > LOOT_CAP) lootLog.removeLast();
             System.out.println("[Web] Loaded " + lootLog.size() + " loot entries from " + LOOT_HISTORY);
+            migrateHistory();
         } catch (Exception e) {
             System.err.println("[Web] Could not load loot history: " + e);
+        }
+    }
+
+    /**
+     * One-time upgrade of older history entries: stamp "minor" on bag filler
+     * (so pre-1.6.1 drops also collapse to their real item) and "className"
+     * on deaths. Runs at load; rewrites the file only when something changed.
+     */
+    private void migrateHistory() {
+        boolean changed = false;
+        try {
+            for (JsonObject o : lootLog) {
+                if (o.has("items")) {
+                    for (var el : o.getAsJsonArray("items")) {
+                        JsonObject it = el.getAsJsonObject();
+                        if (!it.has("minor") && it.has("id")
+                                && GameState.isMinorLoot(it.get("id").getAsInt())) {
+                            it.addProperty("minor", true);
+                            changed = true;
+                        }
+                    }
+                }
+                if (o.has("type") && "death".equals(o.get("type").getAsString())
+                        && !o.has("className") && o.has("classType")) {
+                    int ct = o.get("classType").getAsInt();
+                    if (ct > 0) {
+                        o.addProperty("className", Names.item(ct));
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                rewriteLootHistory();
+                System.out.println("[Web] Timeline history migrated (minor flags / class names)");
+            }
+        } catch (Exception e) {
+            System.err.println("[Web] history migration failed: " + e);
         }
     }
 
@@ -829,6 +867,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         o.addProperty("name", d.name);
         o.addProperty("icon", d.icon);
         o.addProperty("classType", d.classType);
+        if (d.classType > 0) o.addProperty("className", Names.item(d.classType));
         o.addProperty("killedBy", d.killedBy);
         o.addProperty("fame", d.fame);
         o.addProperty("maxed", d.maxed);
