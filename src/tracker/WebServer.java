@@ -895,18 +895,24 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         o.addProperty("fame", d.fame);
         o.addProperty("maxed", d.maxed);
         JsonArray equip = new JsonArray();
-        for (int id : d.equip) {
+        for (int i = 0; i < d.equip.length; i++) {
             JsonObject it = new JsonObject();
-            it.addProperty("id", id);
-            if (id > 0) it.addProperty("name", Names.item(id));
+            it.addProperty("id", d.equip[i]);
+            if (d.equip[i] > 0) it.addProperty("name", Names.item(d.equip[i]));
+            if (i < d.equipSlots.length && d.equipSlots[i] > 0) {
+                it.addProperty("slots", d.equipSlots[i]);
+            }
             equip.add(it);
         }
         o.add("equip", equip);
         JsonArray carried = new JsonArray();
-        for (int id : d.backpack) {
+        for (int i = 0; i < d.backpack.length; i++) {
             JsonObject it = new JsonObject();
-            it.addProperty("id", id);
-            it.addProperty("name", Names.item(id));
+            it.addProperty("id", d.backpack[i]);
+            it.addProperty("name", Names.item(d.backpack[i]));
+            if (i < d.backpackSlots.length && d.backpackSlots[i] > 0) {
+                it.addProperty("slots", d.backpackSlots[i]);
+            }
             carried.add(it);
         }
         o.add("backpack", carried);

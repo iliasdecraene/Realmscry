@@ -152,6 +152,8 @@ public class GameState {
         public int maxed = -1;        // 0..8, -1 = unknown (no players.xml)
         public int[] equip = new int[4];
         public int[] backpack = new int[0]; // inventory + backpack items, ids > 0
+        public int[] equipSlots = new int[4];    // enchant slots per equip item
+        public int[] backpackSlots = new int[0]; // parallel to backpack
         public long ts;
     }
 
@@ -359,22 +361,44 @@ public class GameState {
             d.classType = me.objectType > 0 ? me.objectType : 0;
             int skin = me.stat(StatType.SKIN_ID);
             d.icon = skin > 0 ? skin : d.classType;
+            // Per-slot enchant codes ride on the player entity exactly like
+            // on loot bags: comma-separated, indices 0-3 equip, 4-11 main
+            // inventory, 12-19 backpack (verified live on /debug).
+            String[] codes = null;
+            StatData ud = me.stats.get(StatType.UNIQUE_DATA_STRING.get());
+            if (ud != null && ud.stringStatValue != null) {
+                codes = ud.stringStatValue.split(",", -1);
+            }
             for (int i = 0; i < 4; i++) {
                 StatData sd = me.stats.get(StatType.INVENTORY_0_STAT.get() + i);
-                if (sd != null && sd.statValue > 0) d.equip[i] = sd.statValue;
+                if (sd != null && sd.statValue > 0) {
+                    d.equip[i] = sd.statValue;
+                    d.equipSlots[i] = codes != null && i < codes.length
+                            ? enchantSlotCount(codes[i]) : 0;
+                }
             }
             // Carried items: main inventory (stats 12..19) then backpack
             // (131..138) — shown together on the death card.
             ArrayList<Integer> carried = new ArrayList<>();
+            ArrayList<Integer> carriedSlots = new ArrayList<>();
             for (int i = 4; i < 12; i++) {
                 StatData sd = me.stats.get(StatType.INVENTORY_0_STAT.get() + i);
-                if (sd != null && sd.statValue > 0) carried.add(sd.statValue);
+                if (sd != null && sd.statValue > 0) {
+                    carried.add(sd.statValue);
+                    carriedSlots.add(codes != null && i < codes.length
+                            ? enchantSlotCount(codes[i]) : 0);
+                }
             }
             for (int i = 0; i < 8; i++) {
                 StatData sd = me.stats.get(StatType.BACKPACK_0_STAT.get() + i);
-                if (sd != null && sd.statValue > 0) carried.add(sd.statValue);
+                if (sd != null && sd.statValue > 0) {
+                    carried.add(sd.statValue);
+                    carriedSlots.add(codes != null && 12 + i < codes.length
+                            ? enchantSlotCount(codes[12 + i]) : 0);
+                }
             }
             d.backpack = carried.stream().mapToInt(Integer::intValue).toArray();
+            d.backpackSlots = carriedSlots.stream().mapToInt(Integer::intValue).toArray();
             // 8 stats + their equipment-boost components, game order.
             int[] stat = {
                     me.stat(StatType.MAX_HP_STAT), me.stat(StatType.MAX_MP_STAT),
@@ -392,6 +416,18 @@ public class GameState {
         }
         cDeaths++;
         publisher.died(d);
+    }
+
+    /**
+     * Our player's raw per-slot unique-item data (stat 80): comma-separated
+     * base64url codes, index-matched to the inventory slots. Exposed on
+     * /debug to verify the player-side slot mapping live.
+     */
+    public synchronized String myUniqueData() {
+        Ent me = players.get(myId);
+        if (me == null) return "";
+        StatData sd = me.stats.get(StatType.UNIQUE_DATA_STRING.get());
+        return sd != null && sd.stringStatValue != null ? sd.stringStatValue : "";
     }
 
     /** Own game account id (string stat), "" while unknown. */
@@ -832,6 +868,7 @@ public class GameState {
         Map<String, Object> d = new LinkedHashMap<>();
         d.put("version", Updater.VERSION);
         d.put("myId", myId);
+        d.put("myUniqueData", myUniqueData());
         d.put("rngSeeded", rng != null);
         d.put("map", mapName);
         d.put("players", players.size());
