@@ -378,6 +378,13 @@
   .loot-row.shiny .bag-chip .sprite { filter: drop-shadow(0 0 4px var(--shiny)); }
   .itm.shiny { color: var(--shiny); }
   .itm.shiny .sprite { filter: drop-shadow(0 0 5px var(--shiny)); }
+  /* animated twinkle burst around a shiny item, like the overlay */
+  .sparks { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+  .sparks i {
+    position: absolute; font-style: normal; line-height: 1;
+    color: var(--shiny); text-shadow: 0 0 6px var(--shiny);
+    animation: twinkle 1.6s ease-in-out infinite;
+  }
   @keyframes twinkle {
     0%, 100% { opacity: .55; transform: scale(.85) rotate(0deg); }
     50%      { opacity: 1;   transform: scale(1.2) rotate(20deg); }
@@ -535,6 +542,17 @@
     border: 1px solid #6d2b2b; border-radius: 8px;
     background: rgba(160, 45, 45, .07);
     padding: 10px 12px; margin: 8px 0;
+    position: relative; /* anchors the DEAD stamp */
+  }
+  /* rubber-stamped DEAD, slammed on crooked and too big for the card */
+  .dead-stamp {
+    position: absolute; right: 14px; top: 50%;
+    transform: translateY(-50%) rotate(-14deg);
+    font-family: Impact, "Arial Black", sans-serif;
+    font-size: 72px; letter-spacing: 2px; line-height: 1;
+    color: rgba(214, 34, 34, .88);
+    text-shadow: 3px 3px 0 rgba(0, 0, 0, .45), -2px 1px 0 rgba(120, 10, 10, .6);
+    pointer-events: none; user-select: none; z-index: 3;
   }
   .death-row + .loot-row { border-top: none; }
   .d-head { display: flex; align-items: center; gap: 10px; }
@@ -856,6 +874,12 @@ const dayLabel = ts => {
   return d.toLocaleDateString(undefined, opts);
 };
 
+// Twinkle burst around a shiny item sprite: x, y, size, delay per star.
+const SPARKS = [[-8, -6, 10, 0], [24, -8, 8, .4], [28, 11, 12, .9],
+                [-10, 15, 8, 1.2], [7, -11, 8, .7], [13, 24, 10, .2]];
+const sparks = () => `<span class="sparks">${SPARKS.map(([x, y, s, d]) =>
+  `<i style="left:${x}px;top:${y}px;font-size:${s}px;animation-delay:${d}s">✦</i>`).join("")}</span>`;
+
 // A member's death, rendered as a card: who + killer, the character, its
 // gear, everything carried, and the n/8 maxed badge.
 const deathRow = (l, plain) => {
@@ -885,6 +909,7 @@ const deathRow = (l, plain) => {
       <div class="d-gear">${slots(l.equip)}${carried.length
         ? '<span class="gsep"></span>' + slots(carried) : ""}</div>
       <div class="loot-meta">${esc(l.map || "")} · ${ago(l.ts)}</div>
+      <span class="dead-stamp">DEAD</span>
     </div>`;
 };
 
@@ -910,7 +935,7 @@ const lootRow = (l, plain) => {
           }><span class="iwrap"><img class="sprite" src="/icon/${i.id}" alt=""
              onerror="this.remove()">${
             n ? `<span class="ench e${n}">${"<i></i>".repeat(n)}</span>` : ""
-          }</span>${esc(i.name)}</span>`; }).join("")}</div>
+          }${i.shiny ? sparks() : ""}</span>${esc(i.name)}</span>`; }).join("")}</div>
         <div class="loot-meta">${l.from && l.fromId !== party.id
           ? `<span class="from-chip"${c ? ` style="background:${c}"` : ""}>${esc(l.from)}</span> · ` : ""}${esc(l.map || "")} · ${ago(l.ts)}</div>
       </div>${plain ? "" : tlHeart(l)}
