@@ -441,7 +441,7 @@ final class OverlayManager {
         int cx = 10;
         List<JsonObject> items = shownItems(e);
         for (int i = 0; i < items.size() && i < 9; i++) {
-            cx = drawIcon(g, items.get(i).has("id") ? items.get(i).get("id").getAsInt() : 0, cx, 32, 24) + 2;
+            cx = drawItemIcon(g, items.get(i), cx, 32, 24) + 2;
         }
         // meta right of the chip
         g.setFont(SUB);
@@ -534,7 +534,7 @@ final class OverlayManager {
             int cx = x0;
             List<JsonObject> items = shownItems(data);
             for (int i = 0; i < items.size() && i < 7; i++) {
-                cx = drawIcon(g, items.get(i).has("id") ? items.get(i).get("id").getAsInt() : 0, cx, 28, 24) + 2;
+                cx = drawItemIcon(g, items.get(i), cx, 28, 24) + 2;
             }
         }
         g.setFont(SUB);
@@ -613,8 +613,15 @@ final class OverlayManager {
     }
 
     private int drawIcon(Graphics2D g, int id, int cx, int cy, int size) {
-        if (id <= 0) return cx;
-        BufferedImage img = icons.computeIfAbsent(id, k -> {
+        BufferedImage img = icon(id);
+        if (img == null) return cx;
+        g.drawImage(img, cx, cy, size, size, null);
+        return cx + size + 3;
+    }
+
+    private BufferedImage icon(int id) {
+        if (id <= 0) return null;
+        return icons.computeIfAbsent(id, k -> {
             try {
                 byte[] png = web.iconPng(k);
                 return png.length == 0 ? null
@@ -623,9 +630,63 @@ final class OverlayManager {
                 return null;
             }
         });
+    }
+
+    // Enchant-slot colors, same as the web UI: 1 green, 2 blue, 3 purple, 4 gold.
+    private static final Color[] ENCH = {
+            new Color(0x3d, 0xdc, 0x55), new Color(0x24, 0xc1, 0xff),
+            new Color(0xcf, 0x5b, 0xff), new Color(0xff, 0xd2, 0x3e)};
+
+    // Diamond-cluster layouts inside a 16x16 anchor box (centers + radius),
+    // mirroring the web UI's .ench.e1..e4 positions.
+    private static final int[][][] ENCH_POS = {
+            {{11, 11, 5}},
+            {{4, 10, 4}, {13, 10, 4}},
+            {{4, 5, 4}, {13, 5, 4}, {8, 13, 4}},
+            {{8, 3, 4}, {3, 8, 4}, {13, 8, 4}, {8, 13, 4}}};
+
+    /**
+     * An item sprite plus its enchantment-slot marker: the sprite glows in
+     * the slot-count color and 1-4 diamonds sit on its bottom-right corner,
+     * matching the web timeline's .ench rendering.
+     */
+    private int drawItemIcon(Graphics2D g, JsonObject it, int cx, int cy, int size) {
+        int id = it.has("id") ? it.get("id").getAsInt() : 0;
+        BufferedImage img = icon(id);
         if (img == null) return cx;
+        int n = 0;
+        try {
+            if (it.has("slots")) n = Math.max(0, Math.min(it.get("slots").getAsInt(), 4));
+        } catch (Exception ignored) {
+        }
+        if (n > 0) { // soft halo behind the sprite, like drop-shadow(0 0 4px)
+            Color c = ENCH[n - 1];
+            for (int r = 4; r >= 1; r--) {
+                g.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), 18 + (4 - r) * 12));
+                g.fillRoundRect(cx - r, cy - r, size + 2 * r, size + 2 * r, 6 + r, 6 + r);
+            }
+        }
         g.drawImage(img, cx, cy, size, size, null);
+        if (n > 0) {
+            int bx = cx + size - 10, by = cy + size - 11; // web: right -6, bottom -5
+            for (int[] p : ENCH_POS[n - 1]) {
+                diamond(g, ENCH[n - 1], bx + p[0], by + p[1], p[2]);
+            }
+        }
         return cx + size + 3;
+    }
+
+    private static void diamond(Graphics2D g, Color c, int cx, int cy, int r) {
+        g.setColor(new Color(0, 0, 0, 170)); // dark outline
+        g.fillPolygon(new int[]{cx, cx + r + 1, cx, cx - r - 1},
+                new int[]{cy - r - 1, cy, cy + r + 1, cy}, 4);
+        g.setColor(c);
+        g.fillPolygon(new int[]{cx, cx + r, cx, cx - r},
+                new int[]{cy - r, cy, cy + r, cy}, 4);
+        g.setColor(new Color(255, 255, 255, 190)); // top-left highlight
+        int h = Math.max(1, r / 2);
+        g.fillPolygon(new int[]{cx, cx - h, cx},
+                new int[]{cy - r + 1, cy, cy - r + 1 + h}, 3);
     }
 
     private String trim(Graphics2D g, String s, int maxW) {
