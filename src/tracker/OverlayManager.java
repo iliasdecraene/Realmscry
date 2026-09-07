@@ -102,6 +102,8 @@ final class OverlayManager {
         load();
         exec.scheduleAtFixedRate(this::tick, 2, 1, TimeUnit.SECONDS);
         exec.scheduleAtFixedRate(this::pollGuild, 5, 10, TimeUnit.SECONDS);
+        // 10 fps repaint, but only while a shiny is on screen (sparkle anim)
+        exec.scheduleAtFixedRate(this::animTick, 3000, 100, TimeUnit.MILLISECONDS);
     }
 
     // ------------------------------------------------------------------
@@ -312,6 +314,36 @@ final class OverlayManager {
         exec.schedule(this::pollGuild, 1500, TimeUnit.MILLISECONDS);
     }
 
+    /** Repaints at 10 fps, but only while a shiny drop is being displayed. */
+    private void animTick() {
+        try {
+            JFrame f = frame;
+            if (f == null || !f.isVisible() || !shinyShowing()) return;
+            SwingUtilities.invokeLater(f::repaint);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private boolean shinyShowing() {
+        if (timeline.on && hasShiny(web.latestTimelineEntry())) return true;
+        if (guildBox.on) {
+            JsonObject ev = latestGuildEvent;
+            if (ev != null && hasShiny(ev.has("data") ? ev.getAsJsonObject("data") : null)) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasShiny(JsonObject e) {
+        if (e == null) return false;
+        if (e.has("shiny")) return true;
+        if (e.has("items")) {
+            for (var el : e.getAsJsonArray("items")) {
+                if (el.getAsJsonObject().has("shiny")) return true;
+            }
+        }
+        return false;
+    }
+
     private void ensureFrame() {
         if (frame != null) return;
         JFrame f = new JFrame(WINDOW_TITLE);
@@ -489,6 +521,7 @@ final class OverlayManager {
         g.setColor(MUTED);
         String meta = str(e, "map", "") + " · " + ago(e);
         g.drawString(trim(g, meta, 150), UNIT_W - 12 - Math.min(150, g.getFontMetrics().stringWidth(meta)), TL_H - 10);
+        drawDeadStamp(g, TL_H);
     }
 
     /** Guild box: big member avatar hard left, event info to the right. */
@@ -550,6 +583,7 @@ final class OverlayManager {
         g.setFont(SUB);
         g.setColor(MUTED);
         g.drawString(trim(g, str(data, "tier", "").toUpperCase() + (str(data, "map", "").isEmpty() ? "" : " · " + str(data, "map", "")), UNIT_W - x0 - 12), x0, GD_H - 12);
+        if (death) drawDeadStamp(g, GD_H);
     }
 
     /**
@@ -683,7 +717,74 @@ final class OverlayManager {
                 diamond(g, ENCH[n - 1], bx + p[0], by + p[1], p[2]);
             }
         }
+        if (it.has("shiny")) sparkles(g, cx, cy, size);
         return cx + size + 3;
+    }
+
+    // Sparkle positions around a shiny sprite: x, y (relative to the sprite's
+    // top-left, for size 24) and base radius. Each twinkles on its own phase.
+    private static final int[][] SPARKS = {
+            {-7, -3, 4}, {27, -6, 3}, {31, 12, 5}, {-9, 18, 3},
+            {8, -9, 3}, {12, 28, 4}, {28, 26, 3}, {-4, 8, 2}};
+
+    /** Animated twinkle burst around a shiny item (animTick drives repaints). */
+    private void sparkles(Graphics2D g, int cx, int cy, int size) {
+        double t = System.currentTimeMillis() / 900.0;
+        double k = size / 24.0;
+        for (int i = 0; i < SPARKS.length; i++) {
+            double phase = t * 2 * Math.PI + i * 0.9;
+            double tw = 0.5 + 0.5 * Math.sin(phase); // 0..1 twinkle
+            if (tw < 0.25) continue;                  // blink out entirely
+            double r = SPARKS[i][2] * k * (0.7 + 0.5 * tw);
+            double sx = cx + SPARKS[i][0] * k, sy = cy + SPARKS[i][1] * k;
+            double rot = -Math.PI / 2 + phase * 0.12; // slow spin
+            int a = (int) (90 + 165 * tw);
+            g.setColor(new Color(CYAN.getRed(), CYAN.getGreen(), CYAN.getBlue(), a));
+            g.fill(star(sx, sy, r, rot));
+            g.setColor(new Color(255, 255, 255, a));
+            g.fill(star(sx, sy, r * 0.5, rot));
+        }
+    }
+
+    /** Four-spike star (the ✦ shape) centered on cx,cy. */
+    private static java.awt.geom.Path2D star(double cx, double cy, double r, double rot) {
+        java.awt.geom.Path2D p = new java.awt.geom.Path2D.Double();
+        for (int i = 0; i < 8; i++) {
+            double a = rot + i * Math.PI / 4;
+            double rr = (i % 2 == 0) ? r : r * 0.34;
+            double x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+            if (i == 0) p.moveTo(x, y);
+            else p.lineTo(x, y);
+        }
+        p.closePath();
+        return p;
+    }
+
+    private static final Font STAMP = new Font("Impact", Font.BOLD, 54);
+
+    /**
+     * Big tilted DEAD stamp on the right of a death row — deliberately too
+     * big for the box, spilling past its edges like a rubber stamp slammed
+     * on crooked.
+     */
+    private void drawDeadStamp(Graphics2D g, int boxH) {
+        Graphics2D s = (Graphics2D) g.create();
+        try {
+            double cx = UNIT_W - 60, cy = boxH / 2.0;
+            s.rotate(Math.toRadians(-14), cx, cy);
+            s.setFont(STAMP);
+            var fm = s.getFontMetrics();
+            float x = (float) (cx - fm.stringWidth("DEAD") / 2.0);
+            float y = (float) (cy + (fm.getAscent() - fm.getDescent()) / 2.0);
+            s.setColor(new Color(0, 0, 0, 130));          // drop shadow
+            s.drawString("DEAD", x + 3, y + 3);
+            s.setColor(new Color(120, 10, 10, 150));      // rough double-strike
+            s.drawString("DEAD", x - 2, y + 1);
+            s.setColor(new Color(214, 34, 34, 235));      // the stamp itself
+            s.drawString("DEAD", x, y);
+        } finally {
+            s.dispose();
+        }
     }
 
     private static void diamond(Graphics2D g, Color c, int cx, int cy, int r) {
