@@ -1,7 +1,7 @@
 @echo off
 rem Rebuilds Realmscry.jar from source. Requires a JDK on PATH (javac).
 cd /d "%~dp0"
-javac -cp "..\Sniffer\Tomato-v1.9.2.jar" -d out src\tracker\*.java
+javac -cp "..\Sniffer\Tomato-v1.9.2.jar" -d out src\tracker\*.java src\packets\incoming\*.java
 if errorlevel 1 (echo COMPILE FAILED & pause & exit /b 1)
 copy /y "..\Sniffer\Tomato-v1.9.2.jar" Realmscry.jar >nul
 copy /y web\index.html stage\web\index.html >nul
