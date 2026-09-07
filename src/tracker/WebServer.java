@@ -287,7 +287,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         }
         appendHistory(LOOT_HISTORY, o);
         broadcast("loot", o.toString());
-        if (overlay != null) overlay.refresh();
+        if (overlay != null) overlay.eventHappened();
         PartyClient p = party;
         if (p != null && p.joined()) {
             JsonObject share = o.deepCopy();
@@ -398,7 +398,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         o.add("top", arr);
         lastBoss = o;
         broadcast("boss", o.toString());
-        if (overlay != null) overlay.refresh();
+        if (overlay != null) overlay.eventHappened();
         recordBossKill(bossName, bossType, totalDmg, top, ts);
         System.out.println("[Boss] " + bossName + " killed, total " + totalDmg);
     }
@@ -916,7 +916,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         }
         appendHistory(LOOT_HISTORY, o);
         broadcast("death", o.toString());
-        if (overlay != null) overlay.refresh();
+        if (overlay != null) overlay.eventHappened();
         PartyClient p = party;
         if (p != null && p.joined()) {
             JsonObject share = o.deepCopy();

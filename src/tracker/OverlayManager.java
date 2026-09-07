@@ -101,7 +101,7 @@ final class OverlayManager {
         this.guild = guild;
         load();
         exec.scheduleAtFixedRate(this::tick, 2, 1, TimeUnit.SECONDS);
-        exec.scheduleAtFixedRate(this::pollGuild, 5, 30, TimeUnit.SECONDS);
+        exec.scheduleAtFixedRate(this::pollGuild, 5, 10, TimeUnit.SECONDS);
     }
 
     // ------------------------------------------------------------------
@@ -300,6 +300,16 @@ final class OverlayManager {
     void refresh() {
         JFrame f = frame;
         if (f != null && f.isVisible()) SwingUtilities.invokeLater(f::repaint);
+    }
+
+    /**
+     * An own event (drop/boss/death) was just published: repaint now, and
+     * re-poll the guild feed as soon as the worker has stored our post so
+     * the guild box shows it in ~1.5 s instead of on the next 10 s poll.
+     */
+    void eventHappened() {
+        refresh();
+        exec.schedule(this::pollGuild, 1500, TimeUnit.MILLISECONDS);
     }
 
     private void ensureFrame() {
