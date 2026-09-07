@@ -611,6 +611,18 @@
     border-radius: 6px; padding: 3px 10px; font-size: 13px;
   }
   .g-roster { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .g-setts {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--text-secondary);
+  }
+  .g-setts label { display: inline-flex; align-items: center; gap: 6px; }
+  .g-setts select {
+    background: var(--surface-2); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 6px; font: inherit; cursor: pointer;
+  }
+  .g-setts .g-btn { margin-left: auto; }
   .g-member {
     display: inline-flex; align-items: center; gap: 7px;
     background: var(--surface-2); border: 1px solid var(--border);
@@ -1543,6 +1555,7 @@ async function refreshGuild() {
     if (s.inGuild) {
       guild.name = s.name; guild.code = s.code; guild.role = s.role;
       guild.accountId = s.accountId; guild.members = s.members || [];
+      guild.minSlots = s.minSlots || 0; guild.minMaxed = s.minMaxed || 0;
       const t = await api("/guild/timeline?filter=" + guild.filter);
       if (t.ok) { guild.events = t.events || []; guild.accountId = t.accountId || guild.accountId; }
       else guild.error = t.error || "";
@@ -1620,6 +1633,46 @@ function guildEventHtml(e) {
     </div>`;
 }
 
+// Owner sees editable posting filters + the code-refresh button; members
+// see a read-only line when a filter is active. Filters are enforced by
+// the server, so they apply to every member on any version.
+function guildSettingsHtml() {
+  const slotOpt = ["any drop", "1+ slot items", "2+ slot items", "3+ slot items", "4-slot items"];
+  const maxedOpt = ["any death", ...Array.from({length: 8}, (_, i) => `${i + 1}/8+ only`)];
+  if (guild.role !== "owner") {
+    if (!guild.minSlots && !guild.minMaxed) return "";
+    const bits = [];
+    if (guild.minSlots) bits.push(`drops: ${slotOpt[guild.minSlots]}`);
+    if (guild.minMaxed) bits.push(`deaths: ${maxedOpt[guild.minMaxed]}`);
+    return `<div class="g-setts"><span class="g-hint" style="margin:0">Guild filter — ${bits.join(" · ")}</span></div>`;
+  }
+  const opts = (arr, cur) => arr.map((t, i) =>
+      `<option value="${i}"${i === cur ? " selected" : ""}>${t}</option>`).join("");
+  return `
+    <div class="g-setts">
+      <label>Post <select id="gMinSlots" onchange="guildSetts()">${opts(slotOpt, guild.minSlots || 0)}</select></label>
+      <label>Post <select id="gMinMaxed" onchange="guildSetts()">${opts(maxedOpt, guild.minMaxed || 0)}</select></label>
+      <button class="g-btn ghost" onclick="guildRotateCode(this)">New invite code</button>
+    </div>`;
+}
+
+async function guildSetts() {
+  const minSlots = +($("gMinSlots") || {}).value || 0;
+  const minMaxed = +($("gMinMaxed") || {}).value || 0;
+  const r = await api("/guild/settings", { minSlots, minMaxed });
+  if (r.ok) { guild.minSlots = r.minSlots; guild.minMaxed = r.minMaxed; }
+  else { guild.error = r.error || "could not save settings"; }
+  renderGuild();
+}
+
+async function guildRotateCode(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
+  const r = await api("/guild/rotatecode", {});
+  if (r.ok && r.code) { guild.code = r.code; guild.error = ""; }
+  else { guild.error = r.error || "could not refresh the code"; }
+  renderGuild();
+}
+
 function renderGuild() {
   const el = $("viewGuild");
   if (!guild.loaded) {
@@ -1668,6 +1721,7 @@ function renderGuild() {
         <button class="g-btn ghost" style="margin-left:auto" onclick="guildLeave()">Leave</button>
       </div>
       <div class="g-roster">${members}</div>
+      ${guildSettingsHtml()}
     </section>
     <section class="card g-tl-card">
       <div class="card-head">

@@ -50,7 +50,7 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/" || url.pathname === "") {
-      return new Response("Realmscry relay v8 — see github.com/iliasdecraene/Realmscry\n");
+      return new Response("Realmscry relay v9 — see github.com/iliasdecraene/Realmscry\n");
     }
     if (url.pathname === "/party" && req.method === "POST") {
       return json({ code: genCode() });
@@ -243,6 +243,9 @@ export class Registry {
     // v1.4.1: user-chosen display name (ign is only auto-detected at a map
     // join, so fresh accounts showed as "Unknown").
     try { this.sql.exec("ALTER TABLE accounts ADD COLUMN name TEXT DEFAULT ''"); } catch {}
+    // v1.6.15: owner-set posting filters (0 = post everything).
+    try { this.sql.exec("ALTER TABLE guilds ADD COLUMN min_slots INTEGER DEFAULT 0"); } catch {}
+    try { this.sql.exec("ALTER TABLE guilds ADD COLUMN min_maxed INTEGER DEFAULT 0"); } catch {}
   }
 
   one(query, ...args) {
@@ -347,13 +350,53 @@ export class Registry {
             "JOIN accounts a ON a.id = m.account WHERE m.guild = ? ORDER BY m.joined",
             g.id).toArray();
         return json({ ok: true, inGuild: true, guildId: g.id, name: g.name,
-            code: g.code, role: g.role, accountId: acc.id, members });
+            code: g.code, role: g.role, accountId: acc.id, members,
+            minSlots: g.min_slots || 0, minMaxed: g.min_maxed || 0 });
+      }
+
+      if (path === "/api/guild/settings" && req.method === "POST") {
+        const g = this.myGuild(acc.id);
+        if (!g) return json({ ok: false, error: "not in a guild" });
+        if (g.owner !== acc.id) return json({ ok: false, error: "only the owner can change settings" });
+        const minSlots = Math.max(0, Math.min(4, Number(body.minSlots) || 0));
+        const minMaxed = Math.max(0, Math.min(8, Number(body.minMaxed) || 0));
+        this.sql.exec("UPDATE guilds SET min_slots = ?, min_maxed = ? WHERE id = ?",
+            minSlots, minMaxed, g.id);
+        return json({ ok: true, minSlots, minMaxed });
+      }
+
+      if (path === "/api/guild/rotatecode" && req.method === "POST") {
+        const g = this.myGuild(acc.id);
+        if (!g) return json({ ok: false, error: "not in a guild" });
+        if (g.owner !== acc.id) return json({ ok: false, error: "only the owner can refresh the invite code" });
+        let code = "";
+        for (let i = 0; i < 8 && !code; i++) {
+          const c = genCode() + genCode().slice(0, 2); // 8 chars, like create
+          if (!this.one("SELECT id FROM guilds WHERE code = ?", c)) code = c;
+        }
+        if (!code) return json({ ok: false, error: "could not generate a fresh code, try again" });
+        this.sql.exec("UPDATE guilds SET code = ? WHERE id = ?", code, g.id);
+        return json({ ok: true, code });
       }
 
       if (path === "/api/guild/event" && req.method === "POST") {
         const g = this.myGuild(acc.id);
         if (!g) return json({ ok: false, error: "not in a guild" });
         const type = body.type === "death" ? "death" : "loot";
+        // Owner-set posting filters, enforced here so every member's client
+        // obeys them regardless of version. Filtered posts succeed silently.
+        const minSlots = g.min_slots || 0, minMaxed = g.min_maxed || 0;
+        if (type === "loot" && minSlots > 0) {
+          const items = body.data && Array.isArray(body.data.items) ? body.data.items : [];
+          if (!items.some(i => (Number(i && i.slots) || 0) >= minSlots)) {
+            return json({ ok: true, filtered: true });
+          }
+        }
+        if (type === "death" && minMaxed > 0) {
+          if ((Number(body.data && body.data.maxed) || 0) < minMaxed) {
+            return json({ ok: true, filtered: true });
+          }
+        }
         const data = JSON.stringify(body.data || {});
         if (data.length > EVENT_DATA_MAX) return json({ ok: false, error: "event too large" });
         const ts = Number(body.ts) || Date.now();

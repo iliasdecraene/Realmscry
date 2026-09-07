@@ -261,6 +261,22 @@ final class GuildClient {
         return r;
     }
 
+    /** Owner-only: guild posting filters (0 = post everything). */
+    JsonObject settings(int minSlots, int minMaxed) {
+        if (token.isEmpty()) return err("no account yet");
+        JsonObject b = new JsonObject();
+        b.addProperty("minSlots", minSlots);
+        b.addProperty("minMaxed", minMaxed);
+        return call("/api/guild/settings", "POST", b, true);
+    }
+
+    /** Owner-only: invalidate the invite code and mint a new one. */
+    JsonObject rotateCode() {
+        if (token.isEmpty()) return err("no account yet");
+        // The worker 400s a POST with an empty body — always send {}.
+        return call("/api/guild/rotatecode", "POST", new JsonObject(), true);
+    }
+
     JsonObject timeline(String filter, long before) {
         if (token.isEmpty()) return err("no account yet");
         String q = "/api/guild/timeline?filter=" + (filter == null ? "all" : filter);

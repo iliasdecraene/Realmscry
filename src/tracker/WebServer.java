@@ -680,6 +680,10 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
                 case "/guild/like" -> g.like(
                         body.has("eventId") ? body.get("eventId").getAsLong() : 0,
                         body.has("on") && body.get("on").getAsBoolean());
+                case "/guild/settings" -> g.settings(
+                        body.has("minSlots") ? body.get("minSlots").getAsInt() : 0,
+                        body.has("minMaxed") ? body.get("minMaxed").getAsInt() : 0);
+                case "/guild/rotatecode" -> g.rotateCode();
                 default -> {
                     JsonObject o = new JsonObject();
                     o.addProperty("ok", false);
