@@ -276,11 +276,11 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
             anyShiny |= shiny;
             int slots = it.length > 2 ? it[2] : 0;
             if (slots > 0) item.addProperty("slots", slots);
-            if (GameState.isMinorLoot(it[0])) item.addProperty("minor", true);
             arr.add(item);
         }
         if (anyShiny) o.addProperty("shiny", true);
         o.add("items", arr);
+        stampMinor(o); // filler classifier + white-bag UT rule
         synchronized (lootLog) {
             lootLog.addFirst(o);
             while (lootLog.size() > LOOT_CAP) lootLog.removeLast();
@@ -329,16 +329,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         boolean changed = false;
         try {
             for (JsonObject o : lootLog) {
-                if (o.has("items")) {
-                    for (var el : o.getAsJsonArray("items")) {
-                        JsonObject it = el.getAsJsonObject();
-                        if (!it.has("minor") && it.has("id")
-                                && GameState.isMinorLoot(it.get("id").getAsInt())) {
-                            it.addProperty("minor", true);
-                            changed = true;
-                        }
-                    }
-                }
+                changed |= stampMinor(o);
                 if (o.has("type") && "death".equals(o.get("type").getAsString())
                         && !o.has("className") && o.has("classType")) {
                     int ct = o.get("classType").getAsInt();
@@ -355,6 +346,43 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
         } catch (Exception e) {
             System.err.println("[Web] history migration failed: " + e);
         }
+    }
+
+    /**
+     * (Re)stamp per-item "minor" flags on one loot event. Two rules: the
+     * generic filler classifier (pots/marks/tokens), and the white-bag rule
+     * (v1.6.16): white-bag items always carry the UT label, so when a white
+     * bag holds a UT item everything non-UT in it is filler. Items already
+     * flagged are left alone; returns true when a flag was added — old
+     * events from any source get cleaned at read time through this.
+     */
+    static boolean stampMinor(JsonObject o) {
+        boolean changed = false;
+        try {
+            if (o == null || !o.has("items")) return false;
+            boolean white = o.has("tier") && "white".equals(o.get("tier").getAsString());
+            boolean anyUT = false;
+            if (white) {
+                for (var el : o.getAsJsonArray("items")) {
+                    JsonObject it = el.getAsJsonObject();
+                    if (it.has("id") && GameState.isUT(it.get("id").getAsInt())) {
+                        anyUT = true;
+                        break;
+                    }
+                }
+            }
+            for (var el : o.getAsJsonArray("items")) {
+                JsonObject it = el.getAsJsonObject();
+                if (it.has("minor") || !it.has("id")) continue;
+                int id = it.get("id").getAsInt();
+                if (GameState.isMinorLoot(id) || (anyUT && !GameState.isUT(id))) {
+                    it.addProperty("minor", true);
+                    changed = true;
+                }
+            }
+        } catch (Exception ignored) { // display sugar, never fatal
+        }
+        return changed;
     }
 
     private void appendHistory(Path file, JsonObject o) {
@@ -565,15 +593,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
     private boolean addPartyEvent(JsonObject e) {
         try {
             // Classify filler in events from members on older versions.
-            if (e.has("items")) {
-                for (var el : e.getAsJsonArray("items")) {
-                    JsonObject it = el.getAsJsonObject();
-                    if (!it.has("minor") && it.has("id")
-                            && GameState.isMinorLoot(it.get("id").getAsInt())) {
-                        it.addProperty("minor", true);
-                    }
-                }
-            }
+            stampMinor(e);
             String key = e.get("t").getAsString() + "|"
                     + e.get("fromId").getAsString() + "|" + e.get("ts").getAsLong();
             if (!partySeen.add(key)) return false;

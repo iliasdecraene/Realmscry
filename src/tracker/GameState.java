@@ -670,6 +670,24 @@ public class GameState {
         });
     }
 
+    /**
+     * Untiered item — carries a discrete "UT" label token (TAB_UT and the
+     * like don't count). In a white bag the UT item IS the drop; whatever
+     * rides along (pots, tokens, tiered filler) is noise.
+     */
+    public static boolean isUT(int objectType) {
+        try {
+            String label = IdToAsset.getIdLabel(objectType);
+            if (label != null) {
+                for (String s : label.split(",")) {
+                    if (s.equals("UT")) return true;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
     /** Shiny variants are distinct object ids carrying a SHINY label token. */
     private static boolean isShiny(int objectType) {
         try {

@@ -298,14 +298,7 @@ final class GuildClient {
             for (var ev : r.getAsJsonArray("events")) {
                 JsonObject data = ev.getAsJsonObject().has("data")
                         ? ev.getAsJsonObject().getAsJsonObject("data") : null;
-                if (data == null || !data.has("items")) continue;
-                for (var el : data.getAsJsonArray("items")) {
-                    JsonObject it = el.getAsJsonObject();
-                    if (!it.has("minor") && it.has("id")
-                            && GameState.isMinorLoot(it.get("id").getAsInt())) {
-                        it.addProperty("minor", true);
-                    }
-                }
+                WebServer.stampMinor(data); // filler + white-bag UT rule
             }
         } catch (Exception ignored) { // display sugar, never fatal
         }
