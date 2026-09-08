@@ -11,6 +11,7 @@ import com.sun.jna.win32.W32APIOptions;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
+import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics;
@@ -96,14 +97,58 @@ final class OverlayManager {
     private volatile Rectangle lastBounds;
     private volatile long previewUntil; // Overlay tab open: show despite focus
 
+    // Card-swap animation state: the previously shown entry slides away in
+    // front while the new one settles in from behind.
+    private static final long SWAP_MS = 450;
+    private JsonObject tlShown, tlPrev;
+    private String tlKey = "";
+    private long tlAnimStart;
+    private JsonObject gdShown, gdPrev;
+    private String gdKey = "";
+    private long gdAnimStart;
+    private int animSkip;
+
+    // -Dtracker.swaptest: cycle 5 fake drops 3 s apart so the swap
+    // animation can be eyeballed without waiting for real loot.
+    private volatile JsonObject testEntry;
+
     OverlayManager(WebServer web, GuildClient guild) {
         this.web = web;
         this.guild = guild;
         load();
         exec.scheduleAtFixedRate(this::tick, 2, 1, TimeUnit.SECONDS);
         exec.scheduleAtFixedRate(this::pollGuild, 5, 10, TimeUnit.SECONDS);
-        // 10 fps repaint, but only while a shiny is on screen (sparkle anim)
-        exec.scheduleAtFixedRate(this::animTick, 3000, 100, TimeUnit.MILLISECONDS);
+        // ~25 fps ceiling; animTick only repaints while something animates
+        exec.scheduleAtFixedRate(this::animTick, 3000, 40, TimeUnit.MILLISECONDS);
+        if (System.getProperty("tracker.swaptest") != null) {
+            for (int i = 0; i < 6; i++) { // first seeds the card, then 5 swaps
+                int n = i;
+                exec.schedule(() -> {
+                    testEntry = fakeDrop(n);
+                    refresh();
+                }, 4 + n * 3L, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    private static JsonObject fakeDrop(int n) {
+        String[] tiers = {"white", "orange", "white", "red", "white", "orange"};
+        String[] maps = {"Abyss of Demons", "The Nest", "Fungal Cavern",
+                "The Shatters", "Lost Halls", "Moonlight Village"};
+        int[] ids = {14212, 5575, 14212, 5575, 14212, 5575};
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "loot");
+        o.addProperty("tier", tiers[n]);
+        o.addProperty("ts", System.currentTimeMillis());
+        o.addProperty("map", maps[n]);
+        JsonObject it = new JsonObject();
+        it.addProperty("id", ids[n]);
+        it.addProperty("slots", n % 5);
+        if (n == 1 || n == 3) it.addProperty("shiny", true);
+        JsonArray items = new JsonArray();
+        items.add(it);
+        o.add("items", items);
+        return o;
     }
 
     // ------------------------------------------------------------------
@@ -314,11 +359,18 @@ final class OverlayManager {
         exec.schedule(this::pollGuild, 1500, TimeUnit.MILLISECONDS);
     }
 
-    /** Repaints at 10 fps, but only while a shiny drop is being displayed. */
+    /**
+     * Runs every 40 ms but repaints only while something animates: full
+     * rate during a card swap, roughly every third tick for the shiny
+     * twinkle. Idle overlays cost nothing beyond the timer firing.
+     */
     private void animTick() {
         try {
             JFrame f = frame;
-            if (f == null || !f.isVisible() || !shinyShowing()) return;
+            if (f == null || !f.isVisible()) return;
+            long now = System.currentTimeMillis();
+            boolean swapping = now - tlAnimStart < SWAP_MS || now - gdAnimStart < SWAP_MS;
+            if (!swapping && (!shinyShowing() || ++animSkip % 3 != 0)) return;
             SwingUtilities.invokeLater(f::repaint);
         } catch (Throwable ignored) {
         }
@@ -407,14 +459,84 @@ final class OverlayManager {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-        if (timeline.on) paintScaled(g, timeline, w, h, TL_H,
-                gg -> paintTimelineContent(gg, web.latestTimelineEntry()));
-        if (guildBox.on) paintScaled(g, guildBox, w, h, GD_H, this::paintGuildContent);
+        if (timeline.on) paintScaled(g, timeline, w, h, TL_H, this::paintTimelineBox);
+        if (guildBox.on) paintScaled(g, guildBox, w, h, GD_H, this::paintGuildBox);
         if (boss.on) paintScaled(g, boss, w, h, BOSS_H, this::paintBossContent);
     }
 
     private interface Painter {
         void paint(Graphics2D g);
+    }
+
+    private void paintTimelineBox(Graphics2D g) {
+        JsonObject cur = testEntry != null ? testEntry : web.latestTimelineEntry();
+        String key = cur == null ? "" : str(cur, "type", "loot")
+                + "|" + (cur.has("ts") ? cur.get("ts").getAsString() : "");
+        if (!key.equals(tlKey)) {
+            if (!tlKey.isEmpty()) { // not the very first entry after launch
+                tlPrev = tlShown;
+                tlAnimStart = System.currentTimeMillis();
+            }
+            tlKey = key;
+        }
+        tlShown = cur;
+        paintSwap(g, tlAnimStart, tlPrev,
+                gg -> paintTimelineContent(gg, cur),
+                gg -> paintTimelineContent(gg, tlPrev));
+    }
+
+    private void paintGuildBox(Graphics2D g) {
+        JsonObject cur = latestGuildEvent;
+        String key = cur == null ? "" : str(cur, "account", "")
+                + "|" + (cur.has("ts") ? cur.get("ts").getAsString() : "");
+        if (!key.equals(gdKey)) {
+            if (!gdKey.isEmpty()) {
+                gdPrev = gdShown;
+                gdAnimStart = System.currentTimeMillis();
+            }
+            gdKey = key;
+        }
+        gdShown = cur;
+        paintSwap(g, gdAnimStart, gdPrev,
+                gg -> paintGuildContent(gg, cur),
+                gg -> paintGuildContent(gg, gdPrev));
+    }
+
+    /**
+     * Card-swap: while the animation runs, the incoming card settles in
+     * from behind (rising, growing, brightening) as the old card is tossed
+     * away in front (sliding down-right, tilting, fading). After SWAP_MS
+     * only the new card remains.
+     */
+    private void paintSwap(Graphics2D g, long animStart, JsonObject prev,
+                           Painter cur, Painter old) {
+        double t = (System.currentTimeMillis() - animStart) / (double) SWAP_MS;
+        if (prev == null || t >= 1 || t < 0) {
+            cur.paint(g);
+            return;
+        }
+        double e = 1 - Math.pow(1 - t, 3); // easeOutCubic
+        Graphics2D in = (Graphics2D) g.create();
+        try { // incoming card, from behind
+            double s = 0.94 + 0.06 * e;
+            in.translate(UNIT_W * (1 - s) / 2, -14 * (1 - e));
+            in.scale(s, s);
+            in.setComposite(AlphaComposite.getInstance(
+                    AlphaComposite.SRC_OVER, (float) (0.7 + 0.3 * e)));
+            cur.paint(in);
+        } finally {
+            in.dispose();
+        }
+        Graphics2D out = (Graphics2D) g.create();
+        try { // outgoing card, tossed away on top
+            out.translate(50 * e, 60 * e);
+            out.rotate(Math.toRadians(8 * e), UNIT_W / 2.0, 30);
+            out.setComposite(AlphaComposite.getInstance(
+                    AlphaComposite.SRC_OVER, (float) Math.max(0, 1 - e * 1.15)));
+            old.paint(out);
+        } finally {
+            out.dispose();
+        }
     }
 
     private void paintScaled(Graphics2D g, Box b, int w, int h, int unitH, Painter p) {
@@ -525,8 +647,7 @@ final class OverlayManager {
     }
 
     /** Guild box: big member avatar hard left, event info to the right. */
-    private void paintGuildContent(Graphics2D g) {
-        JsonObject ev = latestGuildEvent;
+    private void paintGuildContent(Graphics2D g, JsonObject ev) {
         bg(g, GD_H, SURFACE, BORDER);
         if (ev == null) {
             g.setFont(CHIP);
