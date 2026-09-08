@@ -671,16 +671,17 @@ public class GameState {
     }
 
     /**
-     * Untiered item — carries a discrete "UT" label token (TAB_UT and the
-     * like don't count). In a white bag the UT item IS the drop; whatever
-     * rides along (pots, tokens, tiered filler) is noise.
+     * Untiered or set-tiered item — carries a discrete "UT" or "ST" label
+     * token (TAB_UT/TAB_ST and the like don't count). In a white or orange
+     * bag the UT/ST item IS the drop; whatever rides along (pots, tokens,
+     * tiered filler) is noise.
      */
-    public static boolean isUT(int objectType) {
+    public static boolean isUTorST(int objectType) {
         try {
             String label = IdToAsset.getIdLabel(objectType);
             if (label != null) {
                 for (String s : label.split(",")) {
-                    if (s.equals("UT")) return true;
+                    if (s.equals("UT") || s.equals("ST")) return true;
                 }
             }
         } catch (Exception ignored) {

@@ -350,23 +350,25 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
 
     /**
      * (Re)stamp per-item "minor" flags on one loot event. Two rules: the
-     * generic filler classifier (pots/marks/tokens), and the white-bag rule
-     * (v1.6.16): white-bag items always carry the UT label, so when a white
-     * bag holds a UT item everything non-UT in it is filler. Items already
-     * flagged are left alone; returns true when a flag was added — old
-     * events from any source get cleaned at read time through this.
+     * generic filler classifier (pots/marks/tokens), and the special-bag
+     * rule (v1.6.16, widened in v1.6.18): white and orange bag drops always
+     * carry a UT or ST label, so when such a bag holds a UT/ST item
+     * everything else in it is filler. Items already flagged are left
+     * alone; returns true when a flag was added — old events from any
+     * source get cleaned at read time through this.
      */
     static boolean stampMinor(JsonObject o) {
         boolean changed = false;
         try {
             if (o == null || !o.has("items")) return false;
-            boolean white = o.has("tier") && "white".equals(o.get("tier").getAsString());
-            boolean anyUT = false;
-            if (white) {
+            String tier = o.has("tier") ? o.get("tier").getAsString() : "";
+            boolean specialBag = "white".equals(tier) || "orange".equals(tier);
+            boolean anySpecial = false;
+            if (specialBag) {
                 for (var el : o.getAsJsonArray("items")) {
                     JsonObject it = el.getAsJsonObject();
-                    if (it.has("id") && GameState.isUT(it.get("id").getAsInt())) {
-                        anyUT = true;
+                    if (it.has("id") && GameState.isUTorST(it.get("id").getAsInt())) {
+                        anySpecial = true;
                         break;
                     }
                 }
@@ -375,7 +377,7 @@ public class WebServer implements GameState.Publisher, PartyClient.Listener {
                 JsonObject it = el.getAsJsonObject();
                 if (it.has("minor") || !it.has("id")) continue;
                 int id = it.get("id").getAsInt();
-                if (GameState.isMinorLoot(id) || (anyUT && !GameState.isUT(id))) {
+                if (GameState.isMinorLoot(id) || (anySpecial && !GameState.isUTorST(id))) {
                     it.addProperty("minor", true);
                     changed = true;
                 }
